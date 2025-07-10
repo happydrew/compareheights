@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm dev:*)",
+      "Bash(npx pnpm dev:*)",
+      "Bash(npm run dev:*)"
+    ],
+    "deny": []
+  }
+}

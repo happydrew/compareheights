@@ -1,0 +1,19 @@
+.file {
+  display: inline-block;
+  font-size: 0.9em;
+  padding: 1px 6px;
+  border-radius: 0.375rem;
+  border: 1px solid #0077ff;
+  color: #0077ff;
+  font-weight: 600;
+  cursor: default;
+  user-select: none;
+}
+.file.active {
+  background-color: #0077ff;
+  color: white;
+}
+
+:global(.dark) .optimization {
+  background: linear-gradient(27deg, #3d3d3d, #252525);
+}
