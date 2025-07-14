@@ -145,10 +145,17 @@ const HeightCompareTool: React.FC = () => {
   });
 
   const [chartAreaHeightPix, setChartAreaHeightPix] = useState(0);
+  const [pixelsPerCmState, setPixelsPerCmState] = useState(1); // 添加新的状态
+
+  // 添加重置缩放函数
+  const resetZoom = () => {
+    setPixelsPerCmState(1); // 重置为默认值1，这会触发自动计算
+  };
 
   // 计算图表展示区的像素高度
   useEffect(() => {
-    const chartArea = chartAreaRef.current!;
+    const chartArea = chartAreaRef.current;
+    if (!chartArea) return;
 
     // 初始设置高度 - 使用工具函数获取内容区域高度
     const chartAreaHeightPix = getContentRect(chartArea).height;
@@ -174,9 +181,42 @@ const HeightCompareTool: React.FC = () => {
 
   /**当前cm与px（px为屏幕像素）的转换比例，即1cm等于多少px */
   const pixelsPerCm = useMemo(() => {
+    // 如果有手动调整的值，使用手动调整的值
+    if (pixelsPerCmState !== 1) {
+      return pixelsPerCmState;
+    }
+    // 否则使用自动计算的值
     const maxHeight = comparisonItems.length > 0 ? Math.max(...comparisonItems.map(item => item.character.height)) : 200;
     return (chartAreaHeightPix - 70) / maxHeight;
-  }, [chartAreaHeightPix, comparisonItems]);
+  }, [chartAreaHeightPix, comparisonItems, pixelsPerCmState]);
+
+  // 添加缩放事件处理
+  useEffect(() => {
+    const chartArea = chartAreaRef.current;
+    if (!chartArea) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // 检查是否按住了 Ctrl 键
+      if (e.ctrlKey) {
+        e.preventDefault(); // 阻止默认的缩放行为
+
+        // 根据滚轮方向调整缩放比例
+        const delta = e.deltaY > 0 ? -0.1 : 0.1; // 滚轮向下为负，向上为正
+        const currentScale = pixelsPerCm;
+        const newScale = currentScale + (currentScale * delta); // 移除最小值限制
+
+        setPixelsPerCmState(newScale);
+      }
+    };
+
+    // 添加事件监听
+    chartArea.addEventListener('wheel', handleWheel, { passive: false });
+
+    // 清理函数
+    return () => {
+      chartArea.removeEventListener('wheel', handleWheel);
+    };
+  }, [pixelsPerCm]);
 
   const [leftPanelSplit, setLeftPanelSplit] = useState(50); // 百分比，控制上下两个区域的高度分配
   const [isDragging, setIsDragging] = useState(false);
@@ -194,7 +234,7 @@ const HeightCompareTool: React.FC = () => {
     offsetX: 0,
     originalStartX: 0,
     mouseX: 0,
-    draggedOriginalLeft: 0
+    draggedOriginalLeft: 0,
   });
 
   // 添加拖拽相关的ref
@@ -342,6 +382,7 @@ const HeightCompareTool: React.FC = () => {
       // 计算交换后被拖动元素的原始左边缘位置
       const targetElement = items[targetIndex] as HTMLElement;
       const newOriginalLeft = targetIndex > draggedIndex ? targetElement.getBoundingClientRect().right - draggedRect.width : targetElement.getBoundingClientRect().left;
+      // console.log('角色即将交换，handleDragMove方法中： newOriginalLeft: ' + newOriginalLeft);
       setDragState(prev => ({ ...prev, draggedOriginalLeft: newOriginalLeft }));
 
       setComparisonItems(updatedItems);
@@ -404,7 +445,9 @@ const HeightCompareTool: React.FC = () => {
     if (!draggedElement) return {};
 
     // 计算translateX：鼠标位置 - (原始左边缘 + 鼠标偏移量)
+    // console.log('getItemStyle方法中： dragState.mouseX: ' + dragState.mouseX + ' \ndragState.draggedOriginalLeft: ' + dragState.draggedOriginalLeft + ' \ndragState.offsetX: ' + dragState.offsetX);
     const translateX = dragState.mouseX - (dragState.draggedOriginalLeft + dragState.offsetX);
+    // console.log('translateX: ' + translateX);
 
     return {
       transform: `translateX(${translateX}px)`,
@@ -561,26 +604,21 @@ const HeightCompareTool: React.FC = () => {
     const container = dragContainerRef.current;
     if (!container) return;
 
+    console.log('updateScrollbarState方法中： container.scrollLeft: ' + container.scrollLeft + ' \ncontainer.scrollWidth: ' + container.scrollWidth + ' \ncontainer.clientWidth: ' + container.clientWidth);
+
     const newState = {
       scrollLeft: container.scrollLeft,
       scrollWidth: container.scrollWidth,
       clientWidth: container.clientWidth
     };
 
-    // 调试信息
-    console.log('更新滚动条状态:', {
-      comparisonItemsLength: comparisonItems.length,
-      ...newState,
-      shouldShowScrollbar: newState.scrollWidth > newState.clientWidth
-    });
-
     setScrollbarState(prev => ({
       ...prev,
       ...newState
     }));
-  }, [comparisonItems.length]);
+  }, []);
 
-  // 监听容器滚动
+  // 监听容器滚动和大小变化
   useEffect(() => {
     const container = dragContainerRef.current;
     if (!container) return;
@@ -588,31 +626,38 @@ const HeightCompareTool: React.FC = () => {
     // 初始更新
     updateScrollbarState();
 
+    // 监听滚动事件
     const handleScroll = () => {
       updateScrollbarState();
     };
 
-    container.addEventListener('scroll', handleScroll);
-
-    // 监听内容变化
-    const resizeObserver = new ResizeObserver(() => {
-      updateScrollbarState();
+    // 创建 ResizeObserver 实例
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        // 检查宽度是否发生变化
+        if (entry.contentRect.width !== scrollbarState.clientWidth) {
+          updateScrollbarState();
+        }
+      }
     });
+
+    // 监听容器本身的大小变化
     resizeObserver.observe(container);
+
+    container.addEventListener('scroll', handleScroll);
 
     return () => {
       container.removeEventListener('scroll', handleScroll);
       resizeObserver.disconnect();
     };
-  }, [updateScrollbarState, comparisonItems]);
+  }, [updateScrollbarState, comparisonItems]); // 添加 comparisonItems 作为依赖
 
   // 特殊处理：当角色清空时强制更新滚动条状态
   useEffect(() => {
     if (comparisonItems.length === 0) {
-      // 使用setTimeout确保DOM完全更新后再检查
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         updateScrollbarState();
-      }, 0);
+      });
     }
   }, [comparisonItems.length, updateScrollbarState]);
 
@@ -930,7 +975,7 @@ const HeightCompareTool: React.FC = () => {
                     {comparisonItems.length} 个对象
                   </div>
                   <div className="text-sm text-gray-600">
-                    pixelsPerCm: {pixelsPerCm}
+                    pixelsPerCm: {pixelsPerCm.toFixed(2)}
                   </div>
                   <div className="text-sm text-gray-600">
                     chartAreaHeightPix: {chartAreaHeightPix}
@@ -938,19 +983,29 @@ const HeightCompareTool: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={resetZoom}
+                    className={`p-2 rounded transition-colors ${pixelsPerCmState === 1
+                      ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
+                      }`}
+                    title="重置缩放"
+                    disabled={pixelsPerCmState === 1}
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={() => {
                       console.log('点击清除按钮，当前角色数量:', comparisonItems.length);
                       clearAllCharacters();
                     }}
-                    className={`p-2 rounded transition-colors ${
-                      comparisonItems.length === 0 
-                        ? 'bg-gray-50 text-gray-400 cursor-not-allowed' 
-                        : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
-                    }`}
+                    className={`p-2 rounded transition-colors ${comparisonItems.length === 0
+                      ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
+                      }`}
                     title="重置/清除全部角色"
                     disabled={comparisonItems.length === 0}
                   >
-                    <RotateCcw className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                   <div className="w-px h-6 bg-gray-300"></div>
                   <button
@@ -1014,9 +1069,12 @@ const HeightCompareTool: React.FC = () => {
                 )}
 
                 {/* 角色展示 */}
-                <div className="relative w-full h-full p-0 m-0 flex flex-col">
+                <div className="relative w-full h-full p-0 m-0">
                   {/* 角色展示区域 */}
-                  <div className="flex-1 flex items-end justify-center overflow-hidden">
+                  <div className="w-full flex items-end justify-center overflow-hidden"
+                    // 这里使用数值来设置容器高度，是为了防止内部内容变大时把容器撑大。h-full（即height: 100%;）会自动撑大容器。
+                    style={{ height: chartAreaHeightPix }}
+                  >
                     {comparisonItems.length === 0 ? (
                       <div className="text-center text-gray-500">
                         <Users className="w-16 h-16 mx-auto mb-4 text-gray-300" />
@@ -1086,7 +1144,7 @@ const HeightCompareTool: React.FC = () => {
 
                   {/* 自定义横向滚动条 */}
                   {comparisonItems.length > 0 && scrollbarState.scrollWidth > scrollbarState.clientWidth && (
-                    <div className="absolute bottom-[-6px] left-0 h-[6px] bg-gray-100 rounded-full mx-2 mt-2">
+                    <div className="absolute bottom-[-7px] left-0 h-[6px] bg-gray-100 rounded-full mx-2 mt-2">
                       {/* 滚动条轨道 */}
                       <div className="absolute inset-0 bg-gray-200 rounded-full"></div>
                       {/* 滚动条滑块 */}
