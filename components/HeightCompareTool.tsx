@@ -6,6 +6,8 @@ import {
   Grid, Eye, EyeOff, ArrowLeftRight, RotateCcw
 } from 'lucide-react';
 import { CharacterDisplay } from './CharacterDisplay';
+import 'simplebar-react/dist/simplebar.min.css';
+
 
 // 单位制枚举
 enum Unit {
@@ -209,6 +211,9 @@ const HeightCompareTool: React.FC = () => {
       }
     };
 
+    
+
+
     // 添加事件监听
     chartArea.addEventListener('wheel', handleWheel, { passive: false });
 
@@ -238,7 +243,9 @@ const HeightCompareTool: React.FC = () => {
   });
 
   // 添加拖拽相关的ref
-  const dragContainerRef = useRef<HTMLDivElement>(null);
+  const charactersContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // 添加横向滚动状态
   const [horizontalScrollState, setHorizontalScrollState] = useState({
@@ -293,7 +300,7 @@ const HeightCompareTool: React.FC = () => {
     e.stopPropagation();
 
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const container = dragContainerRef.current;
+    const container = charactersContainerRef.current;
     if (!container) return;
 
     const itemElement = container.querySelector(`[data-item-id="${itemId}"]`) as HTMLElement;
@@ -322,7 +329,7 @@ const HeightCompareTool: React.FC = () => {
 
     e.preventDefault();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const container = dragContainerRef.current;
+    const container = charactersContainerRef.current;
     if (!container) return;
 
     setDragState(prev => ({ ...prev, mouseX: clientX }));
@@ -438,7 +445,7 @@ const HeightCompareTool: React.FC = () => {
     }
 
     // 获取被拖动元素在当前位置下的原始左边缘位置（没有偏移量时）
-    const container = dragContainerRef.current;
+    const container = charactersContainerRef.current;
     if (!container) return {};
 
     const draggedElement = container.querySelector(`[data-item-id="${itemId}"]`) as HTMLElement;
@@ -556,7 +563,7 @@ const HeightCompareTool: React.FC = () => {
       return;
     }
 
-    const container = dragContainerRef.current;
+    const container = scrollContainerRef.current;
     if (!container) return;
 
     setHorizontalScrollState({
@@ -572,7 +579,7 @@ const HeightCompareTool: React.FC = () => {
   const handleHorizontalScrollMove = useCallback((e: MouseEvent) => {
     if (!horizontalScrollState.isDragging) return;
 
-    const container = dragContainerRef.current;
+    const container = scrollContainerRef.current;
     if (!container) return;
 
     const deltaX = e.clientX - horizontalScrollState.startX;
@@ -583,8 +590,10 @@ const HeightCompareTool: React.FC = () => {
 
   // 处理横向滚动拖拽结束
   const handleHorizontalScrollEnd = useCallback(() => {
-    setHorizontalScrollState(prev => ({ ...prev, isDragging: false }));
-  }, []);
+    if (horizontalScrollState.isDragging) {
+      setHorizontalScrollState(prev => ({ ...prev, isDragging: false }));
+    }
+  }, [horizontalScrollState.isDragging]);
 
   // 添加横向滚动事件监听
   useEffect(() => {
@@ -600,8 +609,8 @@ const HeightCompareTool: React.FC = () => {
 
 
   // 更新滚动条状态
-  const updateScrollbarState = useCallback(() => {
-    const container = dragContainerRef.current;
+  const updateScrollbarState = () => {
+    const container = scrollContainerRef.current;
     if (!container) return;
 
     console.log('updateScrollbarState方法中： container.scrollLeft: ' + container.scrollLeft + ' \ncontainer.scrollWidth: ' + container.scrollWidth + ' \ncontainer.clientWidth: ' + container.clientWidth);
@@ -616,11 +625,11 @@ const HeightCompareTool: React.FC = () => {
       ...prev,
       ...newState
     }));
-  }, []);
+  };
 
   // 监听容器滚动和大小变化
   useEffect(() => {
-    const container = dragContainerRef.current;
+    const container = scrollContainerRef.current;
     if (!container) return;
 
     // 初始更新
@@ -644,11 +653,29 @@ const HeightCompareTool: React.FC = () => {
     // 监听容器本身的大小变化
     resizeObserver.observe(container);
 
+    let charactersContainerResizeObserver: ResizeObserver | null = null;
+
+    if (charactersContainerRef.current) {
+      charactersContainerResizeObserver = new ResizeObserver((entries) => {
+        if (entries.length > 0) {
+          const entry = entries[0];
+          if (entry.contentRect.width >= scrollbarState.clientWidth) {
+            updateScrollbarState();
+          }
+        }
+      });
+
+      charactersContainerResizeObserver.observe(charactersContainerRef.current);
+    }
+
     container.addEventListener('scroll', handleScroll);
 
     return () => {
       container.removeEventListener('scroll', handleScroll);
       resizeObserver.disconnect();
+      if (charactersContainerResizeObserver) {
+        charactersContainerResizeObserver.disconnect();
+      }
     };
   }, [updateScrollbarState, comparisonItems]); // 添加 comparisonItems 作为依赖
 
@@ -675,7 +702,7 @@ const HeightCompareTool: React.FC = () => {
   const handleScrollbarDragMove = useCallback((e: MouseEvent) => {
     if (!scrollbarState.isDragging) return;
 
-    const container = dragContainerRef.current;
+    const container = scrollContainerRef.current;
     if (!container) return;
 
     const deltaX = e.clientX - scrollbarState.startX;
@@ -1071,20 +1098,21 @@ const HeightCompareTool: React.FC = () => {
                 {/* 角色展示 */}
                 <div className="relative w-full h-full p-0 m-0">
                   {/* 角色展示区域 */}
-                  <div className="w-full flex items-end justify-center overflow-hidden"
+                  <div ref={scrollContainerRef}
+                    className="w-full overflow-auto custom-scrollbar"
                     // 这里使用数值来设置容器高度，是为了防止内部内容变大时把容器撑大。h-full（即height: 100%;）会自动撑大容器。
                     style={{ height: chartAreaHeightPix }}
+                    onMouseDown={handleHorizontalScrollStart}
                   >
                     {comparisonItems.length === 0 ? (
-                      <div className="text-center text-gray-500">
+                      <div className="w-full h-full flex flex-col items-center justify-end text-gray-500">
                         <Users className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                         <p className="text-lg">请从左侧添加角色进行比较</p>
                       </div>
                     ) : (
                       <div
-                        ref={dragContainerRef}
-                        className="w-full h-full flex items-end justify-center overflow-auto custom-scrollbar"
-                        onMouseDown={handleHorizontalScrollStart}
+                        ref={charactersContainerRef}
+                        className="w-fit h-full flex items-end justify-start mx-auto"
                         onMouseEnter={(e) => {
                           const target = e.target as HTMLElement;
                           if (!target.closest('[data-item-id]')) {
