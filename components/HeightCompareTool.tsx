@@ -202,17 +202,31 @@ const HeightCompareTool: React.FC = () => {
       if (e.ctrlKey) {
         e.preventDefault(); // 阻止默认的缩放行为
 
+        if (isUpdatingScrollbarState.current) {
+          return;
+        }
+
+        const container = scrollContainerRef.current;
+        if (!container) return;
+
+        // 只在开始缩放时记录中心点位置，避免累积误差
+        if (!zoomStateRef.current.isZooming) {
+          const scrollLeftRatio = (container.scrollLeft + container.clientWidth / 2) / container.scrollWidth;
+
+          console.log(`handleWheel方法中，开始缩放，scrollLeft：${container.scrollLeft}，scrollWidth：${container.scrollWidth}，clientWidth：${container.clientWidth}，scrollLeftRatio：${scrollLeftRatio}`);
+
+          zoomStateRef.current.scrollLeftRatio = scrollLeftRatio;
+          zoomStateRef.current.isZooming = true;
+        }
+
         // 根据滚轮方向调整缩放比例
-        const delta = e.deltaY > 0 ? -0.1 : 0.1; // 滚轮向下为负，向上为正
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
         const currentScale = pixelsPerCm;
-        const newScale = currentScale + (currentScale * delta); // 移除最小值限制
+        const newScale = currentScale + (currentScale * delta); // 添加最小缩放限制
 
         setPixelsPerCmState(newScale);
       }
-    };
-
-    
-
+    }
 
     // 添加事件监听
     chartArea.addEventListener('wheel', handleWheel, { passive: false });
@@ -221,7 +235,7 @@ const HeightCompareTool: React.FC = () => {
     return () => {
       chartArea.removeEventListener('wheel', handleWheel);
     };
-  }, [pixelsPerCm]);
+  }, [pixelsPerCm]); // 移除 pixelsPerCm 依赖，避免重复绑定事件
 
   const [leftPanelSplit, setLeftPanelSplit] = useState(50); // 百分比，控制上下两个区域的高度分配
   const [isDragging, setIsDragging] = useState(false);
@@ -247,6 +261,8 @@ const HeightCompareTool: React.FC = () => {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const isUpdatingScrollbarState = useRef(false);
+
   // 添加横向滚动状态
   const [horizontalScrollState, setHorizontalScrollState] = useState({
     isDragging: false,
@@ -263,6 +279,11 @@ const HeightCompareTool: React.FC = () => {
     startX: 0,           // 开始拖拽时的鼠标X坐标
     startScrollLeft: 0   // 开始拖拽时的滚动位置
   });
+
+  const zoomStateRef = useRef({
+    isZooming: false,
+    scrollLeftRatio: 0
+  })
 
   // 处理点击事件
   useEffect(() => {
@@ -613,18 +634,35 @@ const HeightCompareTool: React.FC = () => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    console.log('updateScrollbarState方法中： container.scrollLeft: ' + container.scrollLeft + ' \ncontainer.scrollWidth: ' + container.scrollWidth + ' \ncontainer.clientWidth: ' + container.clientWidth);
+    let newState = {};
+    if (zoomStateRef.current.isZooming) {
+      const scrollLeft = Math.max(0, Math.min(
+        container.scrollWidth * zoomStateRef.current.scrollLeftRatio - container.clientWidth / 2,
+        container.scrollWidth - container.clientWidth
+      ));
+      console.log(`updateScrollbarState方法中，正在放大: scrollLeftRatio： ${zoomStateRef.current.scrollLeftRatio}, scrollWidth: ${container.scrollWidth},clientWidth: ${container.clientWidth}, 计算后的scrollLeft: ${scrollLeft}`);
 
-    const newState = {
-      scrollLeft: container.scrollLeft,
-      scrollWidth: container.scrollWidth,
-      clientWidth: container.clientWidth
-    };
+      container.scrollLeft = scrollLeft;
 
+      newState = {
+        scrollLeft,
+        scrollWidth: container.scrollWidth,
+        clientWidth: container.clientWidth
+      };
+      zoomStateRef.current.isZooming = false;
+    } else {
+      newState = {
+        scrollLeft: container.scrollLeft,
+        scrollWidth: container.scrollWidth,
+        clientWidth: container.clientWidth
+      };
+    }
     setScrollbarState(prev => ({
       ...prev,
       ...newState
     }));
+
+    isUpdatingScrollbarState.current = false;
   };
 
   // 监听容器滚动和大小变化
@@ -642,12 +680,8 @@ const HeightCompareTool: React.FC = () => {
 
     // 创建 ResizeObserver 实例
     const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        // 检查宽度是否发生变化
-        if (entry.contentRect.width !== scrollbarState.clientWidth) {
-          updateScrollbarState();
-        }
-      }
+      isUpdatingScrollbarState.current = true;
+      updateScrollbarState();
     });
 
     // 监听容器本身的大小变化
@@ -658,10 +692,12 @@ const HeightCompareTool: React.FC = () => {
     if (charactersContainerRef.current) {
       charactersContainerResizeObserver = new ResizeObserver((entries) => {
         if (entries.length > 0) {
+          isUpdatingScrollbarState.current = true;
           const entry = entries[0];
-          if (entry.contentRect.width >= scrollbarState.clientWidth) {
-            updateScrollbarState();
-          }
+          // if (entry.contentRect.width >= scrollbarState.clientWidth) {
+          console.log(`ResizeObserver监测到charactersContainer大小发生变化，contentRect.width：${entry.contentRect.width}, 更新滚动条状态`);
+          updateScrollbarState();
+          // }
         }
       });
 
@@ -677,16 +713,14 @@ const HeightCompareTool: React.FC = () => {
         charactersContainerResizeObserver.disconnect();
       }
     };
-  }, [updateScrollbarState, comparisonItems]); // 添加 comparisonItems 作为依赖
+  }, [comparisonItems.length]);
 
   // 特殊处理：当角色清空时强制更新滚动条状态
   useEffect(() => {
     if (comparisonItems.length === 0) {
-      requestAnimationFrame(() => {
-        updateScrollbarState();
-      });
+      updateScrollbarState();
     }
-  }, [comparisonItems.length, updateScrollbarState]);
+  }, [comparisonItems.length]);
 
   // 处理自定义滚动条拖拽
   const handleScrollbarDragStart = useCallback((e: React.MouseEvent) => {
@@ -1275,3 +1309,4 @@ const HeightCompareTool: React.FC = () => {
 };
 
 export { HeightCompareTool };
+
