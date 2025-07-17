@@ -202,22 +202,22 @@ const HeightCompareTool: React.FC = () => {
       if (e.ctrlKey) {
         e.preventDefault(); // 阻止默认的缩放行为
 
-        if (isUpdatingScrollbarState.current) {
+        if (zoomStateRef.current.isZooming || Date.now() - zoomStateRef.current.zoomStart < 100) {
           return;
         }
 
         const container = scrollContainerRef.current;
         if (!container) return;
 
-        // 只在开始缩放时记录中心点位置，避免累积误差
-        if (!zoomStateRef.current.isZooming) {
-          const scrollLeftRatio = (container.scrollLeft + container.clientWidth / 2) / container.scrollWidth;
+        zoomStateRef.current.isZooming = true;
+        zoomStateRef.current.zoomStart = Date.now();
 
-          console.log(`handleWheel方法中，开始缩放，scrollLeft：${container.scrollLeft}，scrollWidth：${container.scrollWidth}，clientWidth：${container.clientWidth}，scrollLeftRatio：${scrollLeftRatio}`);
+        // 记录中心点位置
+        const scrollLeftRatio = (container.scrollLeft + container.clientWidth / 2) / container.scrollWidth;
 
-          zoomStateRef.current.scrollLeftRatio = scrollLeftRatio;
-          zoomStateRef.current.isZooming = true;
-        }
+        //console.log(`handleWheel方法中，开始缩放，scrollLeft：${container.scrollLeft}，scrollWidth：${container.scrollWidth}，clientWidth：${container.clientWidth}，scrollLeftRatio：${scrollLeftRatio}`);
+
+        zoomStateRef.current.scrollLeftRatio = scrollLeftRatio;
 
         // 根据滚轮方向调整缩放比例
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
@@ -261,7 +261,7 @@ const HeightCompareTool: React.FC = () => {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const isUpdatingScrollbarState = useRef(false);
+  // const isZooming = useRef(false);
 
   // 添加横向滚动状态
   const [horizontalScrollState, setHorizontalScrollState] = useState({
@@ -282,8 +282,10 @@ const HeightCompareTool: React.FC = () => {
 
   const zoomStateRef = useRef({
     isZooming: false,
-    scrollLeftRatio: 0
+    scrollLeftRatio: 0,
+    zoomStart: 0
   })
+
 
   // 处理点击事件
   useEffect(() => {
@@ -640,7 +642,7 @@ const HeightCompareTool: React.FC = () => {
         container.scrollWidth * zoomStateRef.current.scrollLeftRatio - container.clientWidth / 2,
         container.scrollWidth - container.clientWidth
       ));
-      console.log(`updateScrollbarState方法中，正在放大: scrollLeftRatio： ${zoomStateRef.current.scrollLeftRatio}, scrollWidth: ${container.scrollWidth},clientWidth: ${container.clientWidth}, 计算后的scrollLeft: ${scrollLeft}`);
+      //console.log(`updateScrollbarState方法中，正在放大: scrollLeftRatio： ${zoomStateRef.current.scrollLeftRatio}, scrollWidth: ${container.scrollWidth},clientWidth: ${container.clientWidth}, 计算后的scrollLeft: ${scrollLeft}`);
 
       container.scrollLeft = scrollLeft;
 
@@ -662,7 +664,7 @@ const HeightCompareTool: React.FC = () => {
       ...newState
     }));
 
-    isUpdatingScrollbarState.current = false;
+    zoomStateRef.current.isZooming = false;
   };
 
   // 监听容器滚动和大小变化
@@ -680,7 +682,7 @@ const HeightCompareTool: React.FC = () => {
 
     // 创建 ResizeObserver 实例
     const resizeObserver = new ResizeObserver((entries) => {
-      isUpdatingScrollbarState.current = true;
+      // isZooming.current = true;
       updateScrollbarState();
     });
 
@@ -692,10 +694,10 @@ const HeightCompareTool: React.FC = () => {
     if (charactersContainerRef.current) {
       charactersContainerResizeObserver = new ResizeObserver((entries) => {
         if (entries.length > 0) {
-          isUpdatingScrollbarState.current = true;
+          // isZooming.current = true;
           const entry = entries[0];
           // if (entry.contentRect.width >= scrollbarState.clientWidth) {
-          console.log(`ResizeObserver监测到charactersContainer大小发生变化，contentRect.width：${entry.contentRect.width}, 更新滚动条状态`);
+          // console.log(`charactersContainerResizeObserver监测到charactersContainer大小发生变化，iszooming:${zoomStateRef.current.isZooming}, contentRect.width：${entry.contentRect.width}, 更新滚动条状态`);
           updateScrollbarState();
           // }
         }
