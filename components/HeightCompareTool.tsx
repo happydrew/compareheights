@@ -101,12 +101,14 @@ const convertHeight = (cm: number, unit: Unit): string => {
 interface DragState {
   isDragging: boolean;
   draggedItemId: string | null;
-  startX: number;
-  offsetX: number;
-  originalStartX: number; // 记录原始起始位置，不受重排影响
-  mouseX: number;
-  draggedOriginalLeft: number; // 记录被拖动元素的原始左边缘位置，如果发生位置交换，则计算的是交换后的位置
-  preventNextClick?: boolean; // 添加新的标记
+  startMouseX: number;
+  startMouseY: number;
+  currentMouseX: number;
+  currentMouseY: number;
+  fixedElementX: number; // fixed元素的初始X位置
+  fixedElementY: number; // fixed元素的初始Y位置
+  draggedElement: HTMLElement | null; // 被拖拽元素的引用
+  preventNextClick?: boolean;
 }
 
 // 获取元素内容区域尺寸的工具函数
@@ -249,11 +251,13 @@ const HeightCompareTool: React.FC = () => {
   const [dragState, setDragState] = useState<DragState>({
     isDragging: false,
     draggedItemId: null,
-    startX: 0,
-    offsetX: 0,
-    originalStartX: 0,
-    mouseX: 0,
-    draggedOriginalLeft: 0,
+    startMouseX: 0,
+    startMouseY: 0,
+    currentMouseX: 0,
+    currentMouseY: 0,
+    fixedElementX: 0,
+    fixedElementY: 0,
+    draggedElement: null,
   });
 
   // 添加拖拽相关的ref
@@ -323,6 +327,7 @@ const HeightCompareTool: React.FC = () => {
     e.stopPropagation();
 
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
     const container = charactersContainerRef.current;
     if (!container) return;
 
@@ -330,16 +335,17 @@ const HeightCompareTool: React.FC = () => {
     if (!itemElement) return;
 
     const rect = itemElement.getBoundingClientRect();
-    const offsetX = clientX - rect.left;
 
     setDragState({
       isDragging: true,
       draggedItemId: itemId,
-      startX: rect.left,
-      offsetX,
-      originalStartX: rect.left,
-      mouseX: clientX,
-      draggedOriginalLeft: rect.left
+      startMouseX: clientX,
+      startMouseY: clientY,
+      currentMouseX: clientX,
+      currentMouseY: clientY,
+      fixedElementX: rect.left,
+      fixedElementY: rect.top,
+      draggedElement: itemElement,
     });
 
     document.body.style.cursor = 'grabbing';
@@ -352,54 +358,54 @@ const HeightCompareTool: React.FC = () => {
 
     e.preventDefault();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
     const container = charactersContainerRef.current;
     if (!container) return;
 
-    setDragState(prev => ({ ...prev, mouseX: clientX }));
+    // 更新当前鼠标位置
+    setDragState(prev => ({ 
+      ...prev, 
+      currentMouseX: clientX, 
+      currentMouseY: clientY 
+    }));
 
-    // 计算位置交换
-    const items = Array.from(container.querySelectorAll('[data-item-id]'));
+    // 计算fixed拖拽元素应该与哪个占位元素交换
+    const items = Array.from(container.querySelectorAll('[data-item-id]')).filter(
+      item => (item as HTMLElement).getAttribute('data-item-id') !== dragState.draggedItemId
+    );
+    
     const draggedIndex = comparisonItems.findIndex(item => item.id === dragState.draggedItemId);
     if (draggedIndex === -1) return;
 
-    // 获取被拖动元素的原始尺寸
-    const draggedElement = items.find(item =>
-      (item as HTMLElement).getAttribute('data-item-id') === dragState.draggedItemId
-    );
-    if (!draggedElement) return;
-
-    const draggedRect = draggedElement.getBoundingClientRect();
-    // 计算被拖动元素的实际位置（当前鼠标位置减去偏移量）
-    const actualX = clientX - dragState.offsetX;
-    const draggedLeftEdge = actualX;
-    const draggedRightEdge = actualX + draggedRect.width;
-    const draggedCenterX = actualX + draggedRect.width / 2;
+    // 获取fixed元素的中心点位置
+    const dragOffsetX = clientX - dragState.startMouseX;
+    const fixedCenterX = dragState.fixedElementX + dragOffsetX + (dragState.draggedElement?.offsetWidth || 0) / 2;
 
     let targetIndex = draggedIndex;
     let closestDistance = Infinity;
 
-    items.forEach((element, index) => {
-      if (index === draggedIndex) return;
+    items.forEach((element, originalIndex) => {
+      // 需要根据原始数组找到正确的索引
+      const itemId = (element as HTMLElement).getAttribute('data-item-id');
+      const actualIndex = comparisonItems.findIndex(item => item.id === itemId);
+      if (actualIndex === -1) return;
 
       const rect = (element as HTMLElement).getBoundingClientRect();
       const elementCenterX = rect.left + rect.width / 2;
-      const distance = Math.abs(draggedCenterX - elementCenterX);
+      const distance = Math.abs(fixedCenterX - elementCenterX);
 
-      // 向右拖动：当拖动元素的右边缘越过右侧元素的中心线时
-      if (index > draggedIndex && draggedRightEdge > elementCenterX && distance < closestDistance) {
-        targetIndex = index;
-        closestDistance = distance;
-      }
-      // 向左拖动：当拖动元素的左边缘越过左侧元素的中心线时
-      else if (index < draggedIndex && draggedLeftEdge < elementCenterX && distance < closestDistance) {
-        targetIndex = index;
-        closestDistance = distance;
+      // 当fixed元素中心越过其他元素中心时判断交换
+      if (actualIndex !== draggedIndex && distance < closestDistance) {
+        if ((actualIndex > draggedIndex && fixedCenterX > elementCenterX) ||
+            (actualIndex < draggedIndex && fixedCenterX < elementCenterX)) {
+          targetIndex = actualIndex;
+          closestDistance = distance;
+        }
       }
     });
 
-    // 如果位置发生变化且冷却时间已过，更新顺序
+    // 如果需要交换位置，只更新占位元素的顺序
     if (targetIndex !== draggedIndex) {
-
       const newItems = [...comparisonItems];
       const [draggedItem] = newItems.splice(draggedIndex, 1);
       newItems.splice(targetIndex, 0, draggedItem);
@@ -408,12 +414,6 @@ const HeightCompareTool: React.FC = () => {
         ...item,
         order: index
       }));
-
-      // 计算交换后被拖动元素的原始左边缘位置
-      const targetElement = items[targetIndex] as HTMLElement;
-      const newOriginalLeft = targetIndex > draggedIndex ? targetElement.getBoundingClientRect().right - draggedRect.width : targetElement.getBoundingClientRect().left;
-      console.log(`handleDragMove方法中, 判定角色交换，拖拽元素序号是：${draggedIndex},交换目标序号是：${targetIndex}，newOriginalLeft: ${newOriginalLeft}`);
-      setDragState(prev => ({ ...prev, draggedOriginalLeft: newOriginalLeft }));
 
       setComparisonItems(updatedItems);
     }
@@ -424,16 +424,18 @@ const HeightCompareTool: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
 
-    setDragState(prev => ({
+    setDragState({
       isDragging: false,
       draggedItemId: null,
-      startX: 0,
-      offsetX: 0,
-      originalStartX: 0,
-      mouseX: 0,
-      draggedOriginalLeft: 0,
-      preventNextClick: true // 设置标记
-    }));
+      startMouseX: 0,
+      startMouseY: 0,
+      currentMouseX: 0,
+      currentMouseY: 0,
+      fixedElementX: 0,
+      fixedElementY: 0,
+      draggedElement: null,
+      preventNextClick: true
+    });
 
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
@@ -461,33 +463,16 @@ const HeightCompareTool: React.FC = () => {
     }
   }, [dragState.isDragging, handleDragMove, handleDragEnd]);
 
-  // 计算每个项目的样式
+  // 计算占位元素的样式（被拖拽时显示为透明占位）
   const getItemStyle = useCallback((itemId: string, index: number): React.CSSProperties => {
     if (!dragState.isDragging || itemId !== dragState.draggedItemId) {
       return {};
     }
 
-    // 获取被拖动元素在当前位置下的原始左边缘位置（没有偏移量时）
-    const container = charactersContainerRef.current;
-    if (!container) return {};
-
-    const draggedElement = container.querySelector(`[data-item-id="${itemId}"]`) as HTMLElement;
-    if (!draggedElement) return {};
-
-    // 计算translateX：鼠标位置 - (原始左边缘 + 鼠标偏移量)
-    console.log('getItemStyle方法中： dragState.mouseX: ' + dragState.mouseX + ' \ndragState.draggedOriginalLeft: ' + dragState.draggedOriginalLeft + ' \ndragState.offsetX: ' + dragState.offsetX);
-    const translateX = dragState.mouseX - (dragState.draggedOriginalLeft + dragState.offsetX);
-    console.log('translateX: ' + translateX);
-
+    // 被拖拽的元素在原位置显示为透明占位
     return {
-      transform: `translateX(${translateX}px)`,
-      transition: 'none',
-      opacity: 0.8,
-      cursor: 'grabbing',
-      zIndex: 1000,
-      filter: 'brightness(0.9)',
-      boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
-      position: 'relative'
+      opacity: 0,
+      visibility: 'hidden'
     };
   }, [dragState]);
 
@@ -1303,6 +1288,43 @@ const HeightCompareTool: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Fixed拖拽元素 */}
+        {dragState.isDragging && dragState.draggedItemId && dragState.draggedElement && (
+          <div
+            style={{
+              position: 'fixed',
+              left: dragState.fixedElementX + (dragState.currentMouseX - dragState.startMouseX),
+              top: dragState.fixedElementY + (dragState.currentMouseY - dragState.startMouseY),
+              zIndex: 1000,
+              pointerEvents: 'none',
+              opacity: 0.8,
+              filter: 'brightness(0.9)',
+              boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
+              transform: 'scale(1.02)',
+            }}
+          >
+            {(() => {
+              const draggedItem = comparisonItems.find(item => item.id === dragState.draggedItemId);
+              if (!draggedItem) return null;
+              
+              return (
+                <div className="flex flex-col items-center px-3">
+                  <CharacterDisplay
+                    character={draggedItem.character}
+                    pixelsPerCm={pixelsPerCm}
+                    isSelected={false}
+                    unit={unit}
+                    isDragging={true}
+                    onEdit={() => {}}
+                    onMove={() => {}}
+                    onDelete={() => {}}
+                  />
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
