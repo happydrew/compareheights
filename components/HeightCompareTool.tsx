@@ -412,7 +412,7 @@ const HeightCompareTool: React.FC = () => {
       // 计算交换后被拖动元素的原始左边缘位置
       const targetElement = items[targetIndex] as HTMLElement;
       const newOriginalLeft = targetIndex > draggedIndex ? targetElement.getBoundingClientRect().right - draggedRect.width : targetElement.getBoundingClientRect().left;
-      // console.log('角色即将交换，handleDragMove方法中： newOriginalLeft: ' + newOriginalLeft);
+      console.log(`handleDragMove方法中, 判定角色交换，拖拽元素序号是：${draggedIndex},交换目标序号是：${targetIndex}，newOriginalLeft: ${newOriginalLeft}`);
       setDragState(prev => ({ ...prev, draggedOriginalLeft: newOriginalLeft }));
 
       setComparisonItems(updatedItems);
@@ -475,9 +475,9 @@ const HeightCompareTool: React.FC = () => {
     if (!draggedElement) return {};
 
     // 计算translateX：鼠标位置 - (原始左边缘 + 鼠标偏移量)
-    // console.log('getItemStyle方法中： dragState.mouseX: ' + dragState.mouseX + ' \ndragState.draggedOriginalLeft: ' + dragState.draggedOriginalLeft + ' \ndragState.offsetX: ' + dragState.offsetX);
+    console.log('getItemStyle方法中： dragState.mouseX: ' + dragState.mouseX + ' \ndragState.draggedOriginalLeft: ' + dragState.draggedOriginalLeft + ' \ndragState.offsetX: ' + dragState.offsetX);
     const translateX = dragState.mouseX - (dragState.draggedOriginalLeft + dragState.offsetX);
-    // console.log('translateX: ' + translateX);
+    console.log('translateX: ' + translateX);
 
     return {
       transform: `translateX(${translateX}px)`,
