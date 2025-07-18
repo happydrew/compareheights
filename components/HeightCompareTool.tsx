@@ -3,7 +3,7 @@ export { CharacterType, type Character, Unit, convertHeight };
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Trash2, Search, Users, Share2, Download,
-  Grid, Eye, EyeOff, ArrowLeftRight, RotateCcw
+  Grid, Eye, EyeOff, ArrowLeftRight, RotateCcw, ZoomIn, ZoomOut
 } from 'lucide-react';
 import { CharacterDisplay } from './CharacterDisplay';
 import 'simplebar-react/dist/simplebar.min.css';
@@ -194,6 +194,34 @@ const HeightCompareTool: React.FC = () => {
     return (chartAreaHeightPix - 70) / maxHeight;
   }, [chartAreaHeightPix, comparisonItems, pixelsPerCmState]);
 
+  const handleZoom = useCallback((zoomDelta: number) => {
+    if (comparisonItems.length == 0) {
+      return;
+    }
+    if (zoomStateRef.current.isZooming || Date.now() - zoomStateRef.current.zoomStart < 100) {
+      return;
+    }
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    zoomStateRef.current.isZooming = true;
+    zoomStateRef.current.zoomStart = Date.now();
+
+    // 记录中心点位置
+    const scrollLeftRatio = (container.scrollLeft + container.clientWidth / 2) / container.scrollWidth;
+
+    //console.log(`handleWheel方法中，开始缩放，scrollLeft：${container.scrollLeft}，scrollWidth：${container.scrollWidth}，clientWidth：${container.clientWidth}，scrollLeftRatio：${scrollLeftRatio}`);
+
+    zoomStateRef.current.scrollLeftRatio = scrollLeftRatio;
+
+    // 根据滚轮方向调整缩放比例
+    const currentScale = pixelsPerCm;
+    const newScale = currentScale + (currentScale * zoomDelta); // 添加最小缩放限制
+
+    setPixelsPerCmState(newScale);
+  }, [pixelsPerCm, comparisonItems]);
+
   // 添加缩放事件处理
   useEffect(() => {
     const chartArea = chartAreaRef.current;
@@ -203,30 +231,8 @@ const HeightCompareTool: React.FC = () => {
       // 检查是否按住了 Ctrl 键
       if (e.ctrlKey) {
         e.preventDefault(); // 阻止默认的缩放行为
-
-        if (zoomStateRef.current.isZooming || Date.now() - zoomStateRef.current.zoomStart < 100) {
-          return;
-        }
-
-        const container = scrollContainerRef.current;
-        if (!container) return;
-
-        zoomStateRef.current.isZooming = true;
-        zoomStateRef.current.zoomStart = Date.now();
-
-        // 记录中心点位置
-        const scrollLeftRatio = (container.scrollLeft + container.clientWidth / 2) / container.scrollWidth;
-
-        //console.log(`handleWheel方法中，开始缩放，scrollLeft：${container.scrollLeft}，scrollWidth：${container.scrollWidth}，clientWidth：${container.clientWidth}，scrollLeftRatio：${scrollLeftRatio}`);
-
-        zoomStateRef.current.scrollLeftRatio = scrollLeftRatio;
-
-        // 根据滚轮方向调整缩放比例
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        const currentScale = pixelsPerCm;
-        const newScale = currentScale + (currentScale * delta); // 添加最小缩放限制
-
-        setPixelsPerCmState(newScale);
+        handleZoom(delta);
       }
     }
 
@@ -237,7 +243,7 @@ const HeightCompareTool: React.FC = () => {
     return () => {
       chartArea.removeEventListener('wheel', handleWheel);
     };
-  }, [pixelsPerCm]); // 移除 pixelsPerCm 依赖，避免重复绑定事件
+  }, [handleZoom]); // 移除 pixelsPerCm 依赖，避免重复绑定事件
 
   const [leftPanelSplit, setLeftPanelSplit] = useState(50); // 百分比，控制上下两个区域的高度分配
   const [isDragging, setIsDragging] = useState(false);
@@ -363,23 +369,25 @@ const HeightCompareTool: React.FC = () => {
     if (!container) return;
 
     // 更新当前鼠标位置
-    setDragState(prev => ({ 
-      ...prev, 
-      currentMouseX: clientX, 
-      currentMouseY: clientY 
+    setDragState(prev => ({
+      ...prev,
+      currentMouseX: clientX,
+      currentMouseY: clientY
     }));
 
     // 计算fixed拖拽元素应该与哪个占位元素交换
     const items = Array.from(container.querySelectorAll('[data-item-id]')).filter(
       item => (item as HTMLElement).getAttribute('data-item-id') !== dragState.draggedItemId
     );
-    
+
     const draggedIndex = comparisonItems.findIndex(item => item.id === dragState.draggedItemId);
     if (draggedIndex === -1) return;
 
-    // 获取fixed元素的中心点位置
+    // 获取fixed元素的边缘位置
     const dragOffsetX = clientX - dragState.startMouseX;
-    const fixedCenterX = dragState.fixedElementX + dragOffsetX + (dragState.draggedElement?.offsetWidth || 0) / 2;
+    const fixedElementWidth = dragState.draggedElement?.offsetWidth || 0;
+    const fixedLeftEdge = dragState.fixedElementX + dragOffsetX;
+    const fixedRightEdge = fixedLeftEdge + fixedElementWidth;
 
     let targetIndex = draggedIndex;
     let closestDistance = Infinity;
@@ -392,12 +400,16 @@ const HeightCompareTool: React.FC = () => {
 
       const rect = (element as HTMLElement).getBoundingClientRect();
       const elementCenterX = rect.left + rect.width / 2;
-      const distance = Math.abs(fixedCenterX - elementCenterX);
 
-      // 当fixed元素中心越过其他元素中心时判断交换
+      // 计算距离用于选择最近的目标
+      const distance = Math.abs((fixedLeftEdge + fixedRightEdge) / 2 - elementCenterX);
+
+      // 当fixed元素边缘越过其他元素中心时判断交换
       if (actualIndex !== draggedIndex && distance < closestDistance) {
-        if ((actualIndex > draggedIndex && fixedCenterX > elementCenterX) ||
-            (actualIndex < draggedIndex && fixedCenterX < elementCenterX)) {
+        // 向右拖动：被拖角色右边缘越过右边角色中心线
+        // 向左拖动：被拖角色左边缘越过左边角色中心线
+        if ((actualIndex > draggedIndex && fixedRightEdge > elementCenterX) ||
+          (actualIndex < draggedIndex && fixedLeftEdge < elementCenterX)) {
           targetIndex = actualIndex;
           closestDistance = distance;
         }
@@ -838,7 +850,7 @@ const HeightCompareTool: React.FC = () => {
             <div className="px-4 py-2 border-b border-gray-200 bg-gray-100">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">当前角色</h2>
-                <div className="flex gap-2">
+                <div className="flex gap-1">
                   <button
                     onClick={() => setUnit(unit === Unit.CM ? Unit.FT_IN : Unit.CM)}
                     className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm font-medium"
@@ -964,7 +976,7 @@ const HeightCompareTool: React.FC = () => {
             {/* 角色网格 */}
             <div className="flex-1 overflow-y-auto p-4 thin-scrollbar relative">
               <div className="absolute inset-4">
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-3 gap-2">
                   {filteredCharacters.map(character => (
                     <div
                       key={character.id}
@@ -994,13 +1006,11 @@ const HeightCompareTool: React.FC = () => {
                       </div>
 
                       {/* 悬浮提示 */}
-                      <div className={`absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 z-10`}>
+                      <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 px-2 py-1 bg-gray-800/80 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 z-10 backdrop-blur-sm`}>
                         <div className="font-medium">{character.name}</div>
                         <div className="text-gray-300">
                           {convertHeight(character.height, Unit.CM)} / {convertHeight(character.height, Unit.FT_IN)}
                         </div>
-                        {/* 小三角 */}
-                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
                       </div>
                     </div>
                   ))}
@@ -1011,285 +1021,330 @@ const HeightCompareTool: React.FC = () => {
         </div>
 
         {/* 中间图表区域 */}
-        <div className='flex flex-col h-full w-4/5'>
+        <div className={`flex flex-col h-full transition-all duration-300 w-4/5`}>
           <div id="top-ads" className="w-full h-[120px] m-0 py-[10px]"></div>
-          <div className="flex-1 flex flex-col w-full">
-            {/* 工具栏 */}
-            <div className="p-4 bg-white border-b border-gray-200 h-16">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <h1 className="text-xl font-bold">身高比较工具</h1>
-                  <div className="text-sm text-gray-600">
-                    {comparisonItems.length} 个对象
+          <div className='flex-1 flex w-full'>
+            <div className={`flex-1 flex flex-col ${showRightPanel && selectedCharacter ? 'w-[calc(100%-300px)]' : 'w-full'} relative`}>
+              {/* 工具栏 */}
+              <div className="px-4 pt-4 pb-6 bg-white border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <h1 className="text-xl font-bold">身高比较工具</h1>
+                    <div className="text-sm text-gray-600">
+                      {comparisonItems.length} 个对象
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      pixelsPerCm: {pixelsPerCm.toFixed(2)}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      chartAreaHeightPix: {chartAreaHeightPix}
+                    </div>
                   </div>
-                  <div className="text-sm text-gray-600">
-                    pixelsPerCm: {pixelsPerCm.toFixed(2)}
+                  <div className="flex items-center gap-2">
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setUnit(unit === Unit.CM ? Unit.FT_IN : Unit.CM)}
+                        className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm font-medium"
+                        title={`切换到${unit === Unit.CM ? '英尺' : '厘米'}`}
+                      >
+                        <span className={unit === Unit.CM ? 'text-blue-600' : 'text-gray-500'}>cm</span>
+                        <ArrowLeftRight className="w-3.5 h-3.5 text-gray-400" />
+                        <span className={unit === Unit.FT_IN ? 'text-blue-600' : 'text-gray-500'}>ft</span>
+                      </button>
+                    </div>
+                    <button
+                      onClick={resetZoom}
+                      className={`p-2 rounded transition-colors ${pixelsPerCmState === 1
+                        ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                        : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
+                        }`}
+                      title="重置缩放"
+                      disabled={pixelsPerCmState === 1}
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        console.log('点击清除按钮，当前角色数量:', comparisonItems.length);
+                        clearAllCharacters();
+                      }}
+                      className={`p-2 rounded transition-colors ${comparisonItems.length === 0
+                        ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                        : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
+                        }`}
+                      title="重置/清除全部角色"
+                      disabled={comparisonItems.length === 0}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <div className="w-px h-6 bg-gray-300"></div>
+                    <button
+                      onClick={() => setStyleSettings({ ...styleSettings, gridLines: !styleSettings.gridLines })}
+                      className={`p-2 rounded ${styleSettings.gridLines ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
+                      title="网格线"
+                    >
+                      <Grid className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setStyleSettings({ ...styleSettings, labels: !styleSettings.labels })}
+                      className={`p-2 rounded ${styleSettings.labels ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
+                      title="标签"
+                    >
+                      {styleSettings.labels ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                    </button>
+                    <button className="p-2 rounded bg-gray-100 text-gray-600 hover:bg-gray-200" title="导出">
+                      <Download className="w-4 h-4" />
+                    </button>
+                    <button className="p-2 rounded bg-gray-100 text-gray-600 hover:bg-gray-200" title="分享">
+                      <Share2 className="w-4 h-4" />
+                    </button>
                   </div>
-                  <div className="text-sm text-gray-600">
-                    chartAreaHeightPix: {chartAreaHeightPix}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={resetZoom}
-                    className={`p-2 rounded transition-colors ${pixelsPerCmState === 1
-                      ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
-                      : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
-                      }`}
-                    title="重置缩放"
-                    disabled={pixelsPerCmState === 1}
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      console.log('点击清除按钮，当前角色数量:', comparisonItems.length);
-                      clearAllCharacters();
-                    }}
-                    className={`p-2 rounded transition-colors ${comparisonItems.length === 0
-                      ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
-                      : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
-                      }`}
-                    title="重置/清除全部角色"
-                    disabled={comparisonItems.length === 0}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  <div className="w-px h-6 bg-gray-300"></div>
-                  <button
-                    onClick={() => setStyleSettings({ ...styleSettings, gridLines: !styleSettings.gridLines })}
-                    className={`p-2 rounded ${styleSettings.gridLines ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
-                    title="网格线"
-                  >
-                    <Grid className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setStyleSettings({ ...styleSettings, labels: !styleSettings.labels })}
-                    className={`p-2 rounded ${styleSettings.labels ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
-                    title="标签"
-                  >
-                    {styleSettings.labels ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                  </button>
-                  <button className="p-2 rounded bg-gray-100 text-gray-600 hover:bg-gray-200" title="导出">
-                    <Download className="w-4 h-4" />
-                  </button>
-                  <button className="p-2 rounded bg-gray-100 text-gray-600 hover:bg-gray-200" title="分享">
-                    <Share2 className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
-            </div>
 
-            {/* 图表区域 */}
-            <div className="w-full flex-1 p-4 thin-scrollbar" style={{ backgroundColor: styleSettings.backgroundColor, height: `calc(100% - 16px)` }}>
-              <div ref={chartAreaRef} className="relative w-full px-20 h-full flex items-end justify-center">
-                {/* 网格线 */}
-                {styleSettings.gridLines && (
-                  <div className="absolute inset-0 pointer-events-none">
-                    {Array.from({ length: 21 }, (_, i) => {
-                      const heightPercentage = i / 20;
-                      const pixHeight = chartAreaHeightPix * heightPercentage;
-                      const cmHeight = Math.round(pixHeight / pixelsPerCm);
-                      const inchHeight = cmHeight / 2.54;
-                      const feet = Math.floor(inchHeight / 12);
-                      const inches = (inchHeight % 12).toFixed(1);
-
-                      return (
-                        <div
-                          key={i}
-                          className="absolute left-0 w-full border-t border-gray-300"
-                          style={{ bottom: `${heightPercentage * 100}%` }}
-                        >
-                          {styleSettings.labels && (
-                            <>
-                              <span className="absolute left-2 -top-2 text-xs text-gray-600">
-                                {cmHeight}cm
-                              </span>
-                              <span className="absolute right-2 -top-2 text-xs text-gray-600">
-                                {feet}' {inches}"
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
+              {/* 图表区域 */}
+              <div className="w-full flex-1 p-4 thin-scrollbar relative" style={{ backgroundColor: styleSettings.backgroundColor, height: `calc(100% - 16px)` }}>
+                <div ref={chartAreaRef} className="relative px-20 h-full flex items-end justify-center">
+                  {/* 缩放控件 */}
+                  <div className="absolute -top-2 right-[5rem] z-[1002] flex flex-col gap-1">
+                    <button
+                      onClick={() => handleZoom(0.2)}
+                      className="p-2 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-blue-600 shadow-sm hover:shadow-md transition-all"
+                      title="放大 (按住 Ctrl + 滚动鼠标快捷缩放)"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleZoom(-0.2)}
+                      className="p-2 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-blue-600 shadow-sm hover:shadow-md transition-all"
+                      title="缩小 (按住 Ctrl + 滚动鼠标快捷缩放)"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
                   </div>
-                )}
 
-                {/* 角色展示 */}
-                <div className="relative w-full h-full p-0 m-0">
-                  {/* 角色展示区域 */}
-                  <div ref={scrollContainerRef}
-                    className="w-full overflow-auto custom-scrollbar"
-                    // 这里使用数值来设置容器高度，是为了防止内部内容变大时把容器撑大。h-full（即height: 100%;）会自动撑大容器。
-                    style={{ height: chartAreaHeightPix }}
-                    onMouseDown={handleHorizontalScrollStart}
-                  >
-                    {comparisonItems.length === 0 ? (
-                      <div className="w-full h-full flex flex-col items-center justify-end text-gray-500">
-                        <Users className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                        <p className="text-lg">请从左侧添加角色进行比较</p>
+                  {/* 网格线 */}
+                  {styleSettings.gridLines && (
+                    <div className="absolute inset-0 pointer-events-none">
+                      {/* 单位标签 */}
+                      <div className="absolute top-0 left-0 w-full">
+                        <span className="absolute left-4 -top-8 text-sm font-bold text-gray-700">
+                          cm
+                        </span>
+                        <span className="absolute right-4 -top-8 text-sm font-bold text-gray-700">
+                          ft
+                        </span>
                       </div>
-                    ) : (
-                      <div
-                        ref={charactersContainerRef}
-                        className="w-fit h-full flex items-end justify-start mx-auto"
-                        onMouseEnter={(e) => {
-                          const target = e.target as HTMLElement;
-                          if (!target.closest('[data-item-id]')) {
-                            target.style.cursor = horizontalScrollState.isDragging ? 'grabbing' : 'grab';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          const target = e.target as HTMLElement;
-                          target.style.cursor = '';
-                        }}
-                        onMouseMove={(e) => {
-                          const target = e.target as HTMLElement;
-                          if (!target.closest('[data-item-id]')) {
-                            target.style.cursor = horizontalScrollState.isDragging ? 'grabbing' : 'grab';
-                          } else {
+
+                      {Array.from({ length: 21 }, (_, i) => {
+                        const heightPercentage = i / 20;
+                        const pixHeight = chartAreaHeightPix * heightPercentage;
+                        const cmHeight = Math.round(pixHeight / pixelsPerCm);
+                        const inchHeight = cmHeight / 2.54;
+                        const feet = Math.floor(inchHeight / 12);
+                        const inches = (inchHeight % 12).toFixed(1);
+
+                        return (
+                          <div
+                            key={i}
+                            className="absolute left-0 w-full border-t border-gray-300"
+                            style={{ bottom: `${heightPercentage * 100}%` }}
+                          >
+                            {styleSettings.labels && (
+                              <>
+                                <span className="absolute left-2 -top-2 text-xs text-gray-600">
+                                  {cmHeight}cm
+                                </span>
+                                <span className="absolute right-2 -top-2 text-xs text-gray-600">
+                                  {feet}' {inches}"
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* 角色展示 */}
+                  <div className="relative w-full h-full p-0 m-0">
+                    {/* 角色展示区域 */}
+                    <div ref={scrollContainerRef}
+                      className="w-full overflow-auto custom-scrollbar"
+                      // 这里使用数值来设置容器高度，是为了防止内部内容变大时把容器撑大。h-full（即height: 100%;）会自动撑大容器。
+                      style={{ height: chartAreaHeightPix }}
+                      onMouseDown={handleHorizontalScrollStart}
+                    >
+                      {comparisonItems.length === 0 ? (
+                        <div className="w-full h-full flex flex-col items-center justify-end text-gray-500">
+                          <Users className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                          <p className="text-lg">请从左侧添加角色进行比较</p>
+                        </div>
+                      ) : (
+                        <div
+                          ref={charactersContainerRef}
+                          className="w-fit h-full flex items-end justify-start mx-auto"
+                          onMouseEnter={(e) => {
+                            const target = e.target as HTMLElement;
+                            if (!target.closest('[data-item-id]')) {
+                              target.style.cursor = horizontalScrollState.isDragging ? 'grabbing' : 'grab';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            const target = e.target as HTMLElement;
                             target.style.cursor = '';
-                          }
-                        }}
-                      >
-                        {comparisonItems
-                          .filter(item => item.visible)
-                          .sort((a, b) => a.order - b.order)
-                          .map((item, index) => (
-                            <div
-                              key={item.id}
-                              data-item-id={item.id}
-                              className={`flex flex-col items-center px-3 relative ${dragState.draggedItemId === item.id ? 'dragging-item' : ''}`}
-                              style={getItemStyle(item.id, index)}
-                              onClick={(e) => {
-                                // 如果是拖拽后的点击，阻止事件
-                                if (dragState.preventNextClick) {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setDragState(prev => ({ ...prev, preventNextClick: false }));
-                                  return;
-                                }
-                                if (!dragState.isDragging) {
-                                  selectComparisonItem(item);
-                                }
-                              }}
-                            >
-                              <CharacterDisplay
-                                character={item.character}
-                                pixelsPerCm={pixelsPerCm}
-                                isSelected={item.selected}
-                                unit={unit}
-                                isDragging={dragState.draggedItemId === item.id}
-                                onEdit={() => !dragState.isDragging && selectComparisonItem(item)}
-                                onMove={(e) => handleDragStart(item.id, e)}
-                                onDelete={() => !dragState.isDragging && removeFromComparison(item.id)}
-                              />
-                            </div>
-                          ))}
+                          }}
+                          onMouseMove={(e) => {
+                            const target = e.target as HTMLElement;
+                            if (!target.closest('[data-item-id]')) {
+                              target.style.cursor = horizontalScrollState.isDragging ? 'grabbing' : 'grab';
+                            } else {
+                              target.style.cursor = '';
+                            }
+                          }}
+                        >
+                          {comparisonItems
+                            .filter(item => item.visible)
+                            .sort((a, b) => a.order - b.order)
+                            .map((item, index) => (
+                              <div
+                                key={item.id}
+                                data-item-id={item.id}
+                                className={`flex flex-col items-center px-3 relative ${dragState.draggedItemId === item.id ? 'dragging-item' : ''}`}
+                                style={getItemStyle(item.id, index)}
+                                onClick={(e) => {
+                                  // 如果是拖拽后的点击，阻止事件
+                                  if (dragState.preventNextClick) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setDragState(prev => ({ ...prev, preventNextClick: false }));
+                                    return;
+                                  }
+                                  if (!dragState.isDragging) {
+                                    selectComparisonItem(item);
+                                  }
+                                }}
+                              >
+                                <CharacterDisplay
+                                  character={item.character}
+                                  pixelsPerCm={pixelsPerCm}
+                                  isSelected={item.selected}
+                                  unit={unit}
+                                  isDragging={dragState.draggedItemId === item.id}
+                                  onEdit={() => !dragState.isDragging && selectComparisonItem(item)}
+                                  onMove={(e) => handleDragStart(item.id, e)}
+                                  onDelete={() => !dragState.isDragging && removeFromComparison(item.id)}
+                                />
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 自定义横向滚动条 */}
+                    {comparisonItems.length > 0 && scrollbarState.scrollWidth > scrollbarState.clientWidth && (
+                      <div className="absolute bottom-[-7px] left-0 h-[6px] bg-gray-100 rounded-full mx-2 mt-2">
+                        {/* 滚动条轨道 */}
+                        <div className="absolute inset-0 bg-gray-200 rounded-full"></div>
+                        {/* 滚动条滑块 */}
+                        <div
+                          className={`absolute top-0 h-full bg-gray-400 rounded-full transition-colors cursor-pointer ${scrollbarState.isDragging ? 'bg-gray-600' : 'hover:bg-gray-500'
+                            }`}
+                          style={getScrollbarThumbStyle()}
+                          onMouseDown={handleScrollbarDragStart}
+                        ></div>
                       </div>
                     )}
                   </div>
+                </div>
 
-                  {/* 自定义横向滚动条 */}
-                  {comparisonItems.length > 0 && scrollbarState.scrollWidth > scrollbarState.clientWidth && (
-                    <div className="absolute bottom-[-7px] left-0 h-[6px] bg-gray-100 rounded-full mx-2 mt-2">
-                      {/* 滚动条轨道 */}
-                      <div className="absolute inset-0 bg-gray-200 rounded-full"></div>
-                      {/* 滚动条滑块 */}
-                      <div
-                        className={`absolute top-0 h-full bg-gray-400 rounded-full transition-colors cursor-pointer ${scrollbarState.isDragging ? 'bg-gray-600' : 'hover:bg-gray-500'
-                          }`}
-                        style={getScrollbarThumbStyle()}
-                        onMouseDown={handleScrollbarDragStart}
-                      ></div>
+              </div>
+            </div>
+            {/* 右侧编辑面板 - 固定在最右侧 */}
+            {showRightPanel && selectedCharacter && (
+              <div ref={rightPanelRef} className={`w-[300px] bg-white shadow-xl z-[1003] overflow-y-auto border-l border-gray-200 thin-scrollbar transition-transform duration-300`}>
+                <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">角色详情</h3>
+                    <button
+                      onClick={() => {
+                        setShowRightPanel(false)
+                        setSelectedCharacter(null)
+                      }}
+                      className="text-gray-500 hover:text-gray-700 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
+                    >
+                      <span className="text-xl">×</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  <div>
+                    <label htmlFor="character-name" className="block text-sm font-medium text-gray-700 mb-1">名称</label>
+                    <input
+                      id="character-name"
+                      type="text"
+                      value={selectedCharacter.name}
+                      onChange={(e) => updateCharacter('name', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="输入角色名称"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="character-height" className="block text-sm font-medium text-gray-700 mb-1">身高</label>
+                    <div className="flex gap-2">
+                      <input
+                        id="character-height"
+                        type="number"
+                        value={selectedCharacter.height}
+                        onChange={(e) => updateCharacter('height', Number(e.target.value))}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        min="30"
+                        max="300"
+                        placeholder="输入身高"
+                      />
+                      <span className="px-3 py-2 bg-gray-100 rounded-md text-sm">cm</span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {convertHeight(selectedCharacter.height, Unit.FT_IN)}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">颜色</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#6B7280'].map(color => (
+                        <button
+                          key={color}
+                          onClick={() => updateCharacter('color', color)}
+                          className={`w-8 h-8 rounded-full border-2 ${selectedCharacter.color === color ? 'border-gray-800' : 'border-gray-300'}`}
+                          style={{ backgroundColor: color }}
+                          title={`选择颜色: ${color}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {selectedCharacter.isCustom && (
+                    <div>
+                      <label htmlFor="character-description" className="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                      <textarea
+                        id="character-description"
+                        value={selectedCharacter.description || ''}
+                        onChange={(e) => updateCharacter('description', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        rows={3}
+                        placeholder="输入角色描述"
+                      />
                     </div>
                   )}
                 </div>
               </div>
-            </div>
+            )}
           </div>
+
         </div>
-
-        {/* 右侧编辑面板 - 工具区域内的绝对定位 */}
-        {showRightPanel && selectedCharacter && (
-          <div ref={rightPanelRef} className="absolute right-0 top-0 h-full w-80 bg-white shadow-xl z-10 overflow-y-auto border-l border-gray-200 thin-scrollbar">
-            <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">角色详情</h3>
-                <button
-                  onClick={() => setShowRightPanel(false)}
-                  className="text-gray-500 hover:text-gray-700 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
-                >
-                  <span className="text-xl">×</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <div>
-                <label htmlFor="character-name" className="block text-sm font-medium text-gray-700 mb-1">名称</label>
-                <input
-                  id="character-name"
-                  type="text"
-                  value={selectedCharacter.name}
-                  onChange={(e) => updateCharacter('name', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="输入角色名称"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="character-height" className="block text-sm font-medium text-gray-700 mb-1">身高</label>
-                <div className="flex gap-2">
-                  <input
-                    id="character-height"
-                    type="number"
-                    value={selectedCharacter.height}
-                    onChange={(e) => updateCharacter('height', Number(e.target.value))}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    min="30"
-                    max="300"
-                    placeholder="输入身高"
-                  />
-                  <span className="px-3 py-2 bg-gray-100 rounded-md text-sm">cm</span>
-                </div>
-                <div className="text-xs text-gray-500 mt-1">
-                  {convertHeight(selectedCharacter.height, Unit.FT_IN)}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">颜色</label>
-                <div className="flex gap-2 flex-wrap">
-                  {['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#6B7280'].map(color => (
-                    <button
-                      key={color}
-                      onClick={() => updateCharacter('color', color)}
-                      className={`w-8 h-8 rounded-full border-2 ${selectedCharacter.color === color ? 'border-gray-800' : 'border-gray-300'}`}
-                      style={{ backgroundColor: color }}
-                      title={`选择颜色: ${color}`}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {selectedCharacter.isCustom && (
-                <div>
-                  <label htmlFor="character-description" className="block text-sm font-medium text-gray-700 mb-1">描述</label>
-                  <textarea
-                    id="character-description"
-                    value={selectedCharacter.description || ''}
-                    onChange={(e) => updateCharacter('description', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    rows={3}
-                    placeholder="输入角色描述"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Fixed拖拽元素 */}
         {dragState.isDragging && dragState.draggedItemId && dragState.draggedElement && (
@@ -1309,7 +1364,7 @@ const HeightCompareTool: React.FC = () => {
             {(() => {
               const draggedItem = comparisonItems.find(item => item.id === dragState.draggedItemId);
               if (!draggedItem) return null;
-              
+
               return (
                 <div className="flex flex-col items-center px-3">
                   <CharacterDisplay
@@ -1318,9 +1373,9 @@ const HeightCompareTool: React.FC = () => {
                     isSelected={false}
                     unit={unit}
                     isDragging={true}
-                    onEdit={() => {}}
-                    onMove={() => {}}
-                    onDelete={() => {}}
+                    onEdit={() => { }}
+                    onMove={() => { }}
+                    onDelete={() => { }}
                   />
                 </div>
               );

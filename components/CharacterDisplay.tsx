@@ -73,7 +73,7 @@ const CharacterDisplay: React.FC<{
                     className={`absolute group-hover:opacity-100 group-hover:!z-[1001] bottom-full left-1/2 
                         transform -translate-x-1/2 pb-2 text-center transition-transform duration-150 ease-out 
                         whitespace-nowrap info-card group-hover:scale-[var(--hover-scale)] rounded-md group-hover:bg-white 
-                        pointer-events-auto ${isDragging ? 'scale-[var(--hover-scale)]' : ''}`}
+                        pointer-events-auto ${isDragging ? 'opacity-100 !z-[1001] bg-white' : ''}`}
                     style={{
                         fontSize: `${normalFontSize}px`,
                         '--hover-scale': hoverScale,
