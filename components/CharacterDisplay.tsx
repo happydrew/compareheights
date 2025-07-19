@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CharacterType, type Character, Unit, convertHeight, convertHeightSmart, convertHeightSmartImperial, getBestUnit, UnitSystem, UNIT_CONVERSIONS } from "./HeightCompareTool";
+import { CharacterType, type Character, Unit, convertHeight, convertHeightSmart, convertHeightSmartImperial, getBestUnit, UnitSystem, UNIT_CONVERSIONS, CharacterImageRenderer } from "./HeightCompareTool";
 import {
     Trash2, Edit3, Move
 } from 'lucide-react';
@@ -7,16 +7,16 @@ import {
 // 角色展示组件
 const CharacterDisplay: React.FC<{
     character: Character;
-    pixelsPerCm: number;
+    pixelsPerM: number;
     isSelected?: boolean;
     unit: Unit;
     isDragging?: boolean;
     onEdit?: () => void;
     onMove?: (e: React.MouseEvent<Element> | React.TouchEvent<Element>) => void;
     onDelete?: () => void;
-}> = ({ character, pixelsPerCm, isSelected, unit, isDragging = false, onEdit, onMove, onDelete }) => {
+}> = ({ character, pixelsPerM, isSelected, unit, isDragging = false, onEdit, onMove, onDelete }) => {
     // 计算显示尺寸
-    const displayHeight = character.height * pixelsPerCm;
+    const displayHeight = character.height * pixelsPerM;
     const displayWidth = (character.width / character.height) * displayHeight; // 保持原始宽高比
 
     // 根据显示高度动态计算字体大小
@@ -56,6 +56,7 @@ const CharacterDisplay: React.FC<{
                 height: `${displayHeight}px`,
                 width: `${displayWidth}px`,
             }}
+            title="拖拽移动角色位置"
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
             onMouseDown={(e) => {
@@ -71,7 +72,7 @@ const CharacterDisplay: React.FC<{
             <div className="absolute inset-0 overflow-visible pointer-events-none">
                 <div
                     className={`absolute group-hover:opacity-100 group-hover:!z-[1001] bottom-full left-1/2 
-                        transform -translate-x-1/2 pb-2 text-center transition-transform duration-150 ease-out 
+                        transform -translate-x-1/2 pb-2 px-0 text-center transition-transform duration-150 ease-out 
                         whitespace-nowrap info-card group-hover:scale-[var(--hover-scale)] rounded-md group-hover:bg-white 
                         pointer-events-auto ${isDragging ? 'opacity-100 !z-[1001] bg-white' : ''}`}
                     style={{
@@ -84,9 +85,9 @@ const CharacterDisplay: React.FC<{
                 >
                     {/* 操作按钮组 */}
                     <div
-                        className={`flex items-center justify-center invisible group-hover:visible ${isDragging ? 'visible' : ''}`}
+                        className={`flex items-center justify-around invisible group-hover:visible ${isDragging ? 'visible' : ''}`}
                         style={{
-                            gap: `${4 / hoverScale}px`,
+                            // gap: `${4 / hoverScale}px`,
                             marginTop: `${4 / hoverScale}px`,
                         }}
                     >
@@ -148,30 +149,35 @@ const CharacterDisplay: React.FC<{
                             <Trash2 width={buttonNormalSize} height={buttonNormalSize} />
                         </button>
                     </div>
-                    <div className="font-medium mb-0.5">{character.name}</div>
+                    <div className="w-full text-center font-medium mb-0.5"
+                        title={character.name}
+                    >
+                        {character.name}
+                    </div>
                     {/* 正常状态只显示当前单位 */}
-                    <div className={`flex flex-col gap-0.5 font-medium`}>
-                        <div className="flex items-center justify-center">
-                            {getHeightDisplay(unit)}
-                        </div>
+                    <div className={`w-full flex items-center justify-center font-medium`}
+                        title={getHeightDisplay(unit)}
+                    >
+                        {getHeightDisplay(unit)}
                     </div>
                 </div>
             </div>
 
             {/* 内部容器 - 完全贴合内容 */}
             <div className="w-full h-full flex items-center justify-center relative z-10">
-                {character.imageUrl ? (
-                    <img
-                        src={character.imageUrl}
-                        alt={character.name}
-                        className="w-full h-full object-contain"
+                {character.media ? (
+                    <CharacterImageRenderer
+                        character={character}
+                        containerWidth={displayWidth}
+                        containerHeight={displayHeight}
+                        className="w-full h-full"
                     />
                 ) : (
-                    // 默认显示一个简单的矩形作为占位
+                    // 默认显示一个简单的矩形作为占位（兼容旧数据）
                     <div
                         className="w-full h-full"
                         style={{
-                            backgroundColor: character.color,
+                            backgroundColor: character.appearance?.color || (character as any).color || '#3B82F6',
                             opacity: 0.8
                         }}
                     />

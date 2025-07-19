@@ -7,7 +7,12 @@
       "Bash(rg:*)",
       "Bash(node:*)",
       "Bash(rm:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "Bash(awk:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm install:*)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": []
   }

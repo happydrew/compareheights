@@ -1,4 +1,20 @@
-export { CharacterType, type Character, Unit, convertHeight, convertHeightSmart, convertHeightSmartImperial, getBestUnit, UnitSystem, UNIT_CONVERSIONS };
+export { 
+  CharacterType, 
+  type Character, 
+  type CharacterMedia,
+  type CharacterAppearance,
+  Unit, 
+  convertHeight, 
+  convertHeightSmart, 
+  convertHeightSmartImperial, 
+  getBestUnit, 
+  UnitSystem, 
+  UNIT_CONVERSIONS,
+  CharacterImageRenderer,
+  InlineSVGRenderer,
+  imageCache,
+  useCharacterDimensions
+};
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
@@ -6,6 +22,7 @@ import {
   Grid, Eye, EyeOff, ArrowLeftRight, RotateCcw, ZoomIn, ZoomOut, GripVertical
 } from 'lucide-react';
 import { CharacterDisplay } from './CharacterDisplay';
+import { ImageUploadModal } from './ImageUploadModal';
 import 'simplebar-react/dist/simplebar.min.css';
 
 // 高精度数值处理类
@@ -66,7 +83,7 @@ class Precision {
 enum UnitSystem {
   // 公制单位
   NANOMETER = 'nm',
-  MICROMETER = 'μm', 
+  MICROMETER = 'μm',
   MILLIMETER = 'mm',
   CENTIMETER = 'cm',
   METER = 'm',
@@ -77,33 +94,79 @@ enum UnitSystem {
   MILE = 'mi'
 }
 
-// 单位转换系数（基于厘米）
+// 单位转换系数（基于米）
 const UNIT_CONVERSIONS = {
-  [UnitSystem.NANOMETER]: 10000000,    // 1cm = 10^7 nm
-  [UnitSystem.MICROMETER]: 10000,       // 1cm = 10^4 μm
-  [UnitSystem.MILLIMETER]: 10,          // 1cm = 10 mm
-  [UnitSystem.CENTIMETER]: 1,           // 1cm = 1 cm
-  [UnitSystem.METER]: 0.01,             // 1cm = 0.01 m
-  [UnitSystem.KILOMETER]: 0.00001,      // 1cm = 10^-5 km
-  [UnitSystem.INCH]: 0.393701,          // 1cm = 0.393701 in
-  [UnitSystem.FOOT]: 0.0328084,         // 1cm = 0.0328084 ft
-  [UnitSystem.MILE]: 0.00000621371      // 1cm = 6.21371×10^-6 mi
+  [UnitSystem.NANOMETER]: 1000000000,  // 1m = 10^9 nm
+  [UnitSystem.MICROMETER]: 1000000,    // 1m = 10^6 μm
+  [UnitSystem.MILLIMETER]: 1000,       // 1m = 1000 mm
+  [UnitSystem.CENTIMETER]: 100,        // 1m = 100 cm
+  [UnitSystem.METER]: 1,               // 1m = 1 m
+  [UnitSystem.KILOMETER]: 0.001,       // 1m = 0.001 km
+  [UnitSystem.INCH]: 39.3701,          // 1m = 39.3701 in
+  [UnitSystem.FOOT]: 3.28084,          // 1m = 3.28084 ft
+  [UnitSystem.MILE]: 0.000621371       // 1m = 0.000621371 mi
 };
 
-// 动态选择最适合的单位制
-function getBestUnit(heightInCm: number, preferMetric: boolean = true): UnitSystem {
-  const absHeight = Math.abs(heightInCm);
-  
+// 动态选择最适合的单位制 - 优化版，避免科学计数法
+function getBestUnit(heightInM: number, preferMetric: boolean = true): UnitSystem {
+  const absHeight = Math.abs(heightInM);
+
   if (preferMetric) {
-    if (absHeight < 0.001) return UnitSystem.NANOMETER;
-    if (absHeight < 1) return UnitSystem.MICROMETER;
-    if (absHeight < 10) return UnitSystem.MILLIMETER;
-    if (absHeight < 10000) return UnitSystem.CENTIMETER;
-    if (absHeight < 100000) return UnitSystem.METER;
+    // 先尝试转换到各个单位，检查是否会产生科学计数法
+    const nmValue = absHeight * UNIT_CONVERSIONS[UnitSystem.NANOMETER];
+    const umValue = absHeight * UNIT_CONVERSIONS[UnitSystem.MICROMETER];
+    const mmValue = absHeight * UNIT_CONVERSIONS[UnitSystem.MILLIMETER];
+    const cmValue = absHeight * UNIT_CONVERSIONS[UnitSystem.CENTIMETER];
+    const mValue = absHeight * UNIT_CONVERSIONS[UnitSystem.METER];
+    const kmValue = absHeight * UNIT_CONVERSIONS[UnitSystem.KILOMETER];
+
+    // 从小到大检查，优先选择不需要科学计数法的最合适单位
+    if (absHeight < 0.00001) {
+      // 纳米级别
+      if (nmValue >= 1 && nmValue < 1000) return UnitSystem.NANOMETER;
+      if (umValue >= 0.001 && umValue < 1000) return UnitSystem.MICROMETER;
+      if (mmValue >= 0.001 && mmValue < 1000) return UnitSystem.MILLIMETER;
+      return UnitSystem.NANOMETER; // 回退到纳米
+    }
+
+    if (absHeight < 0.01) {
+      // 微米级别  
+      if (umValue >= 1 && umValue < 1000) return UnitSystem.MICROMETER;
+      if (mmValue >= 0.001 && mmValue < 1000) return UnitSystem.MILLIMETER;
+      if (cmValue >= 0.001 && cmValue < 1000) return UnitSystem.CENTIMETER;
+      return UnitSystem.MICROMETER; // 回退到微米
+    }
+
+    if (absHeight < 0.1) {
+      // 毫米级别
+      if (mmValue >= 1 && mmValue < 1000) return UnitSystem.MILLIMETER;
+      if (cmValue >= 0.001 && cmValue < 1000) return UnitSystem.CENTIMETER;
+      if (mValue >= 0.001 && mValue < 1000) return UnitSystem.METER;
+      return UnitSystem.MILLIMETER; // 回退到毫米
+    }
+
+    if (absHeight < 10) {
+      // 厘米级别
+      if (cmValue >= 1 && cmValue < 1000) return UnitSystem.CENTIMETER;
+      if (mValue >= 0.001 && mValue < 1000) return UnitSystem.METER;
+      if (kmValue >= 0.001 && kmValue < 1000) return UnitSystem.KILOMETER;
+      return UnitSystem.CENTIMETER; // 回退到厘米
+    }
+
+    if (absHeight < 1000) {
+      // 米级别
+      if (mValue >= 1 && mValue < 1000) return UnitSystem.METER;
+      if (kmValue >= 0.001 && kmValue < 1000) return UnitSystem.KILOMETER;
+      return UnitSystem.METER; // 回退到米
+    }
+
+    // 千米级别
     return UnitSystem.KILOMETER;
+
   } else {
-    if (absHeight < 2.54) return UnitSystem.INCH;
-    if (absHeight < 30480) return UnitSystem.FOOT;
+    // 英制单位逻辑（原来基于厘米，现在基于米）
+    if (absHeight < 0.0254) return UnitSystem.INCH;
+    if (absHeight < 304.8) return UnitSystem.FOOT;
     return UnitSystem.MILE;
   }
 }
@@ -113,48 +176,50 @@ function formatScientificNotation(value: number, decimals: number = 2): string {
   const exp = value.toExponential(decimals);
   const parts = exp.split('e');
   if (parts.length !== 2) return exp;
-  
+
   const mantissa = parts[0];
   let exponent = parseInt(parts[1]);
-  
+
   // 上标数字映射
   const superscriptMap: { [key: string]: string } = {
     '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
     '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
     '-': '⁻', '+': '⁺'
   };
-  
+
   // 转换指数为上标
   const expStr = exponent.toString();
   const superscriptExp = expStr.split('').map(char => superscriptMap[char] || char).join('');
-  
+
   return `${mantissa}×10${superscriptExp}`;
 }
 
-// 格式化数值显示
+// 格式化数值显示 - 新的全局规则
 function formatNumber(value: number, maxLength: number = 8): string {
-  // 如果数值太大或太小，使用科学计数法
-  if (Math.abs(value) >= 1000000 || (Math.abs(value) < 0.001 && value !== 0)) {
-    return formatScientificNotation(value, 2);
+  // 科学计数法规则：整数部分超过3位(≥1000)或小于0.001时使用科学计数法，4位有效数字
+  if (Math.abs(value) >= 1000 || (Math.abs(value) < 0.001 && value !== 0)) {
+    return formatScientificNotation(value, 3); // 3位小数确保4位有效数字
   }
-  
-  // 否则使用常规格式，限制小数位数
+
+  // 常规显示：保持最多4位有效数字
   const str = value.toString();
   if (str.length > maxLength) {
-    const decimals = Math.max(0, maxLength - Math.floor(Math.log10(Math.abs(value))) - 2);
+    // 计算需要的小数位数以保持4位有效数字
+    const integerDigits = Math.floor(Math.log10(Math.abs(value))) + 1;
+    const decimals = Math.max(0, 4 - integerDigits);
     return value.toFixed(decimals);
   }
-  
+
   return str;
 }
 
 // 高精度转换高度
-function convertHeightPrecision(heightInCm: number, targetUnit: UnitSystem): { value: number, formatted: string } {
+function convertHeightPrecision(heightInM: number, targetUnit: UnitSystem): { value: number, formatted: string } {
   const conversion = UNIT_CONVERSIONS[targetUnit];
-  const precision = Precision.from(heightInCm);
+  const precision = Precision.from(heightInM);
   const converted = precision.multiply(conversion);
   const value = converted.toNumber();
-  
+
   return {
     value,
     formatted: formatNumber(value)
@@ -177,20 +242,40 @@ enum CharacterType {
   UPLOAD = 'upload'       // 上传图片
 }
 
+// 角色媒体信息接口
+interface CharacterMedia {
+  type: 'svg' | 'image'; // 媒体类型
+  url: string; // 主要图片/SVG的URL
+  thumbnailUrl: string; // 缩略图URL（用于角色库展示）
+  svgContent?: string; // SVG内容（仅当type为svg时）
+  originalWidth?: number; // 原始图片宽度
+  originalHeight?: number; // 原始图片高度
+}
+
+// 角色外观信息接口
+interface CharacterAppearance {
+  color: string; // 默认颜色
+  colorCustomizable: boolean; // 是否支持自定义颜色
+  colorProperty?: string; // SVG中需要修改颜色的属性名（如'fill', 'stroke'）
+}
+
 // 角色接口
 interface Character {
   id: string;
   name: string;
-  height: number; // 以cm为单位
-  width: number; // 以cm为单位
+  height: number; // 以m为单位
+  width: number; // 以m为单位
   type: CharacterType;
-  color: string;
-  imageUrl?: string; // 角色图片或SVG的URL
+  
+  // 媒体相关
+  media: CharacterMedia;
+  
+  // 外观相关
+  appearance: CharacterAppearance;
+  
   isCustom: boolean;
   description?: string;
-  aspectRatio?: number; // 图片的宽高比（宽/高）
   isUploadedImage?: boolean; // 是否为用户上传的图片
-  svgIcon?: string; // SVG图标代码（用于通用角色）
 }
 
 // 比较项目接口
@@ -214,125 +299,572 @@ interface StyleSettings {
   spacing: number;
 }
 
-// 预设角色数据
+// 图片缓存管理器
+class ImageCacheManager {
+  private cache = new Map<string, HTMLImageElement>();
+  private loadingPromises = new Map<string, Promise<HTMLImageElement>>();
+
+  async preloadImage(url: string): Promise<HTMLImageElement> {
+    if (this.cache.has(url)) {
+      return this.cache.get(url)!;
+    }
+
+    if (this.loadingPromises.has(url)) {
+      return this.loadingPromises.get(url)!;
+    }
+
+    const promise = new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        this.cache.set(url, img);
+        this.loadingPromises.delete(url);
+        resolve(img);
+      };
+      img.onerror = () => {
+        this.loadingPromises.delete(url);
+        reject(new Error(`Failed to load image: ${url}`));
+      };
+      img.src = url;
+    });
+
+    this.loadingPromises.set(url, promise);
+    return promise;
+  }
+
+  getCachedImage(url: string): HTMLImageElement | null {
+    return this.cache.get(url) || null;
+  }
+
+  async preloadCharacterImages(characters: Character[]) {
+    const promises = characters.map(char => {
+      if (char.media.type === 'image') {
+        return Promise.all([
+          this.preloadImage(char.media.url),
+          this.preloadImage(char.media.thumbnailUrl)
+        ]);
+      }
+      return Promise.resolve();
+    });
+    
+    await Promise.allSettled(promises);
+  }
+
+  clearCache() {
+    this.cache.clear();
+    this.loadingPromises.clear();
+  }
+}
+
+// 全局图片缓存实例
+const imageCache = new ImageCacheManager();
+
+// SVG颜色处理函数
+const processSVGColor = (svgContent: string, color?: string, colorProperty: string = 'fill'): string => {
+  if (!color) return svgContent;
+  
+  // 根据颜色属性类型进行替换
+  const regex = new RegExp(`${colorProperty}="[^"]*"`, 'g');
+  return svgContent.replace(regex, `${colorProperty}="${color}"`);
+};
+
+// SVG内联渲染组件
+const InlineSVGRenderer: React.FC<{
+  svgContent: string;
+  color?: string;
+  colorProperty?: string;
+  className?: string;
+  style?: React.CSSProperties;
+}> = ({ svgContent, color, colorProperty = 'fill', className = '', style }) => {
+  const processedSVG = useMemo(() => {
+    return processSVGColor(svgContent, color, colorProperty);
+  }, [svgContent, color, colorProperty]);
+
+  return (
+    <div 
+      className={className}
+      style={style}
+      dangerouslySetInnerHTML={{ __html: processedSVG }}
+    />
+  );
+};
+
+// 角色尺寸计算Hook
+const useCharacterDimensions = (
+  character: Character,
+  containerWidth: number,
+  containerHeight: number
+) => {
+  return useMemo(() => {
+    const characterAspectRatio = character.width / character.height;
+    const containerAspectRatio = containerWidth / containerHeight;
+    
+    let imageWidth: number;
+    let imageHeight: number;
+    let offsetX: number = 0;
+    let offsetY: number = 0;
+    
+    if (characterAspectRatio > containerAspectRatio) {
+      // 角色更宽，以容器宽度为准，垂直居中
+      imageWidth = containerWidth;
+      imageHeight = containerWidth / characterAspectRatio;
+      offsetY = (containerHeight - imageHeight) / 2;
+    } else {
+      // 角色更高或等比，以容器高度为准，水平居中
+      imageHeight = containerHeight;
+      imageWidth = containerHeight * characterAspectRatio;
+      offsetX = (containerWidth - imageWidth) / 2;
+    }
+    
+    return {
+      imageWidth,
+      imageHeight,
+      offsetX,
+      offsetY,
+      scale: imageHeight / containerHeight
+    };
+  }, [character.width, character.height, containerWidth, containerHeight]);
+};
+
+// 角色图片渲染组件
+const CharacterImageRenderer: React.FC<{
+  character: Character;
+  containerWidth: number;
+  containerHeight: number;
+  customColor?: string;
+  className?: string;
+  onLoad?: () => void;
+  onError?: () => void;
+}> = ({ 
+  character, 
+  containerWidth, 
+  containerHeight, 
+  customColor, 
+  className = '', 
+  onLoad, 
+  onError 
+}) => {
+  const dimensions = useCharacterDimensions(character, containerWidth, containerHeight);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  
+  const finalColor = customColor || character.appearance.color;
+  
+  useEffect(() => {
+    if (character.media.type === 'image') {
+      setIsLoading(true);
+      setHasError(false);
+      
+      imageCache.preloadImage(character.media.url)
+        .then(() => {
+          setIsLoading(false);
+          onLoad?.();
+        })
+        .catch(() => {
+          setIsLoading(false);
+          setHasError(true);
+          onError?.();
+        });
+    } else {
+      setIsLoading(false);
+      onLoad?.();
+    }
+  }, [character.media.url, character.media.type, onLoad, onError]);
+  
+  return (
+    <div 
+      className={`relative ${className}`}
+      style={{
+        width: `${containerWidth}px`,
+        height: `${containerHeight}px`,
+      }}
+    >
+      {/* 加载状态 */}
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      )}
+      
+      {/* 错误状态 */}
+      {hasError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded">
+          <div className="text-gray-500 text-xs text-center p-2">
+            加载失败<br/>
+            {character.name}
+          </div>
+        </div>
+      )}
+      
+      {/* 图片内容 */}
+      {!isLoading && !hasError && (
+        <div
+          style={{
+            position: 'absolute',
+            left: `${dimensions.offsetX}px`,
+            top: `${dimensions.offsetY}px`,
+            width: `${dimensions.imageWidth}px`,
+            height: `${dimensions.imageHeight}px`,
+          }}
+        >
+          {character.media.type === 'svg' ? (
+            <InlineSVGRenderer 
+              svgContent={character.media.svgContent || ''}
+              color={character.appearance.colorCustomizable ? finalColor : undefined}
+              colorProperty={character.appearance.colorProperty}
+              className="w-full h-full"
+            />
+          ) : (
+            <img
+              src={character.media.url}
+              alt={character.name}
+              className="w-full h-full object-fill"
+              style={{ objectPosition: 'center' }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// 预设角色数据（基于米） - 使用新的数据结构
 const PRESET_CHARACTERS: Character[] = [
-  // 通用角色 - 男性
-  { id: 'generic-male-1', name: '男性1', height: 175, width: 50, type: CharacterType.GENERIC, color: '#3B82F6', isCustom: false, svgIcon: 'male1' },
-  { id: 'generic-male-2', name: '男性2', height: 175, width: 50, type: CharacterType.GENERIC, color: '#1E40AF', isCustom: false, svgIcon: 'male2' },
-  { id: 'generic-male-3', name: '男性3', height: 175, width: 50, type: CharacterType.GENERIC, color: '#1E3A8A', isCustom: false, svgIcon: 'male3' },
-  
-  // 通用角色 - 女性
-  { id: 'generic-female-1', name: '女性1', height: 165, width: 45, type: CharacterType.GENERIC, color: '#EC4899', isCustom: false, svgIcon: 'female1' },
-  { id: 'generic-female-2', name: '女性2', height: 165, width: 45, type: CharacterType.GENERIC, color: '#DB2777', isCustom: false, svgIcon: 'female2' },
-  { id: 'generic-female-3', name: '女性3', height: 165, width: 45, type: CharacterType.GENERIC, color: '#BE185D', isCustom: false, svgIcon: 'female3' },
-  
-  // 通用角色 - 中性
-  { id: 'generic-neutral-1', name: '中性1', height: 170, width: 48, type: CharacterType.GENERIC, color: '#10B981', isCustom: false, svgIcon: 'neutral1' },
-  { id: 'generic-neutral-2', name: '中性2', height: 170, width: 48, type: CharacterType.GENERIC, color: '#059669', isCustom: false, svgIcon: 'neutral2' },
-  
-  // 通用角色 - 儿童
-  { id: 'generic-child-1', name: '儿童1', height: 120, width: 35, type: CharacterType.GENERIC, color: '#F59E0B', isCustom: false, svgIcon: 'child1' },
-  { id: 'generic-child-2', name: '儿童2', height: 120, width: 35, type: CharacterType.GENERIC, color: '#D97706', isCustom: false, svgIcon: 'child2' },
+  // 通用角色 - 男性 (SVG)
+  {
+    id: 'generic-male-1',
+    name: '男性1',
+    height: 1.75,
+    width: 0.5,
+    type: CharacterType.GENERIC,
+    media: {
+      type: 'svg',
+      url: '/assets/svg/man1.svg',
+      thumbnailUrl: '/assets/svg/man1.svg',
+      svgContent: `<svg viewBox="0 0 48.452904 127.02859" version="1.1">
+        <g transform="translate(-103.1875,-117.47499)">
+          <path fill="#fda98b" d="m 132.854,113.071 c 0.138,11.329 3.891,19.73 -16.944,29.534 12.402,17.062 24.616,23.367 24.616,23.367 0,0 26.13,-11.762 35.109,-19.545 -4.672,-3.399 -9.549,-5.939 -13.858,-8.967 -8.512,-5.981 -3.49,-19.271 -5.152,-24.178 z"/>
+          <path fill="#fda98b" d="m 137.914,124.95 c 4.695,2.9 10.065,2.016 15.468,0.292 5.962,-1.902 15.645,-19.227 12.01,-40.568 -3.665,-21.515 -27.598,-24.089 -37.094,-9.575 -8.567,13.095 -2.72,42.231 9.616,49.851 z"/>
+          <path fill="#323d4d" d="m 99.297,263.919 c -0.248,4.973 -12.274,248.738 -7.49,249.202 2.569,0.249 19.738,1.532 20.306,-1.058 20.424,-93.05 29.946,-183.941 29.946,-183.941 5.752,36.51 5.76,73.746 11.277,110.3 2.066,13.692 15.453,72.697 17.592,73.153 3.625,0.773 19.88,2.425 19.866,-0.907 -0.089,-20.982 -1.993,-246.749 -1.993,-246.749 z"/>
+        </g>
+      </svg>`
+    },
+    appearance: {
+      color: '#3B82F6',
+      colorCustomizable: true,
+      colorProperty: 'fill'
+    },
+    isCustom: false
+  },
 
-  // 名人 - 现实人物
-  { id: 'celebrity-yao', name: '姚明', height: 226, width: 60, type: CharacterType.CELEBRITY, color: '#8B5CF6', isCustom: false },
-  { id: 'celebrity-taylor', name: '泰勒·斯威夫特', height: 180, width: 48, type: CharacterType.CELEBRITY, color: '#EF4444', isCustom: false },
-  { id: 'celebrity-jordan', name: '迈克尔·乔丹', height: 198, width: 55, type: CharacterType.CELEBRITY, color: '#DC2626', isCustom: false },
-  
-  // 名人 - 动漫角色
-  { id: 'anime-conan', name: '江户川柯南', height: 120, width: 30, type: CharacterType.CELEBRITY, color: '#2563EB', isCustom: false },
-  { id: 'anime-luffy', name: '蒙奇·D·路飞', height: 174, width: 45, type: CharacterType.CELEBRITY, color: '#EF4444', isCustom: false },
-  
-  // 名人 - 神话人物
-  { id: 'myth-zeus', name: '宙斯', height: 250, width: 80, type: CharacterType.CELEBRITY, color: '#7C3AED', isCustom: false },
+  // 通用角色 - 女性 (SVG)
+  {
+    id: 'generic-female-1',
+    name: '女性1',
+    height: 1.65,
+    width: 0.45,
+    type: CharacterType.GENERIC,
+    media: {
+      type: 'svg',
+      url: '/assets/svg/woman1.svg',
+      thumbnailUrl: '/assets/svg/woman1.svg',
+      svgContent: `<svg viewBox="0 0 43.255074 124.109" version="1.1">
+        <g transform="translate(-106.1815,-118.31049)">
+          <path fill="#fda98b" d="m 130.123,115.234 c 0.125,10.329 3.54,17.99 -15.421,26.89 11.285,15.546 22.415,21.289 22.415,21.289 0,0 23.787,-10.717 31.954,-17.812 -4.254,-3.098 -8.696,-5.406 -12.612,-8.168 -7.746,-5.447 -3.178,-17.552 -4.689,-22.019 z"/>
+          <path fill="#fda98b" d="m 134.736,125.89 c 4.278,2.641 9.163,1.835 14.081,0.266 5.425,-1.732 14.238,-17.507 10.931,-36.944 -3.335,-19.591 -25.124,-21.936 -33.777,-8.725 -7.801,11.924 -2.476,38.443 8.765,45.403 z"/>
+          <path fill="#323d4d" d="m 95.547,254.234 c -0.226,4.531 -11.166,226.672 -6.816,227.103 2.337,0.227 17.955,1.395 18.472,-0.963 18.587,-84.727 27.227,-167.479 27.227,-167.479 5.233,33.227 5.24,67.178 10.264,100.453 1.88,12.467 14.057,66.193 16.009,66.612 3.297,0.704 18.081,2.207 18.069,-0.826 -0.081,-19.101 -1.812,-224.666 -1.812,-224.666 z"/>
+        </g>
+      </svg>`
+    },
+    appearance: {
+      color: '#EC4899',
+      colorCustomizable: true,
+      colorProperty: 'fill'
+    },
+    isCustom: false
+  },
 
-  // 物体 - 建筑物
-  { id: 'object-eiffel', name: '埃菲尔铁塔', height: 32400, width: 12400, type: CharacterType.OBJECT, color: '#6B7280', isCustom: false },
-  { id: 'object-liberty', name: '自由女神像', height: 4615, width: 1400, type: CharacterType.OBJECT, color: '#059669', isCustom: false },
-  { id: 'object-burj', name: '哈利法塔', height: 82800, width: 15000, type: CharacterType.OBJECT, color: '#1F2937', isCustom: false },
-  
-  // 物体 - 自然物体
-  { id: 'object-everest', name: '珠穆朗玛峰', height: 884800, width: 500000, type: CharacterType.OBJECT, color: '#374151', isCustom: false },
-  { id: 'object-earth', name: '地球', height: 1276700000, width: 1276700000, type: CharacterType.OBJECT, color: '#3B82F6', isCustom: false },
-  { id: 'object-sun', name: '太阳', height: 139200000000, width: 139200000000, type: CharacterType.OBJECT, color: '#F59E0B', isCustom: false },
+  // 名人 - 马斯克 (图片)
+  {
+    id: 'celebrity-musk',
+    name: '埃隆·马斯克',
+    height: 1.88,
+    width: 0.52,
+    type: CharacterType.CELEBRITY,
+    media: {
+      type: 'image',
+      url: 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=400&h=600&fit=crop&crop=faces',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=200&h=300&fit=crop&crop=faces',
+      originalWidth: 400,
+      originalHeight: 600
+    },
+    appearance: {
+      color: '#1F2937',
+      colorCustomizable: false
+    },
+    isCustom: false,
+    description: '特斯拉和SpaceX CEO'
+  },
 
-  // 生物 - 动物
-  { id: 'bio-giraffe', name: '长颈鹿', height: 550, width: 200, type: CharacterType.BIOLOGY, color: '#D97706', isCustom: false },
-  { id: 'bio-elephant', name: '大象', height: 400, width: 600, type: CharacterType.BIOLOGY, color: '#6B7280', isCustom: false },
-  { id: 'bio-whale', name: '蓝鲸', height: 3000, width: 2500, type: CharacterType.BIOLOGY, color: '#1E40AF', isCustom: false },
-  { id: 'bio-ant', name: '蚂蚁', height: 0.5, width: 0.3, type: CharacterType.BIOLOGY, color: '#7C2D12', isCustom: false },
+  // 名人 - 比尔·盖茨 (图片)
+  {
+    id: 'celebrity-gates',
+    name: '比尔·盖茨',
+    height: 1.77,
+    width: 0.50,
+    type: CharacterType.CELEBRITY,
+    media: {
+      type: 'image',
+      url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=600&fit=crop&crop=faces',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=300&fit=crop&crop=faces',
+      originalWidth: 400,
+      originalHeight: 600
+    },
+    appearance: {
+      color: '#374151',
+      colorCustomizable: false
+    },
+    isCustom: false,
+    description: '微软联合创始人'
+  },
+
+  // 名人 - C罗 (图片)
+  {
+    id: 'celebrity-ronaldo',
+    name: 'C罗',
+    height: 1.87,
+    width: 0.54,
+    type: CharacterType.CELEBRITY,
+    media: {
+      type: 'image',
+      url: 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400&h=600&fit=crop&crop=faces',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=200&h=300&fit=crop&crop=faces',
+      originalWidth: 400,
+      originalHeight: 600
+    },
+    appearance: {
+      color: '#EF4444',
+      colorCustomizable: false
+    },
+    isCustom: false,
+    description: '葡萄牙足球运动员'
+  },
+
+  // 通用角色 - 儿童 (SVG)
+  {
+    id: 'generic-child-1',
+    name: '儿童1',
+    height: 1.2,
+    width: 0.35,
+    type: CharacterType.GENERIC,
+    media: {
+      type: 'svg',
+      url: '/assets/svg/boy1.svg',
+      thumbnailUrl: '/assets/svg/boy1.svg',
+      svgContent: `<svg viewBox="0 0 35 90" version="1.1">
+        <g>
+          <circle fill="#fda98b" cx="17.5" cy="15" r="8"/>
+          <rect fill="#3B82F6" x="12" y="25" width="11" height="20"/>
+          <rect fill="#1E40AF" x="10" y="45" width="15" height="25"/>
+          <rect fill="#fda98b" x="14" y="70" width="3" height="15"/>
+          <rect fill="#fda98b" x="18" y="70" width="3" height="15"/>
+          <rect fill="#000" x="13" y="85" width="5" height="5"/>
+          <rect fill="#000" x="17" y="85" width="5" height="5"/>
+        </g>
+      </svg>`
+    },
+    appearance: {
+      color: '#F59E0B',
+      colorCustomizable: true,
+      colorProperty: 'fill'
+    },
+    isCustom: false
+  },
+
+  // 名人 - 姚明
+  {
+    id: 'celebrity-yao',
+    name: '姚明',
+    height: 2.26,
+    width: 0.6,
+    type: CharacterType.CELEBRITY,
+    media: {
+      type: 'image',
+      url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=600&fit=crop&crop=faces',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&h=300&fit=crop&crop=faces',
+      originalWidth: 400,
+      originalHeight: 600
+    },
+    appearance: {
+      color: '#8B5CF6',
+      colorCustomizable: false
+    },
+    isCustom: false,
+    description: '中国篮球运动员'
+  },
+
+  // 物体 - 埃菲尔铁塔
+  {
+    id: 'object-eiffel',
+    name: '埃菲尔铁塔',
+    height: 324,
+    width: 124,
+    type: CharacterType.OBJECT,
+    media: {
+      type: 'svg',
+      url: '/assets/svg/eiffel-tower.svg',
+      thumbnailUrl: '/assets/svg/eiffel-tower.svg',
+      svgContent: `<svg viewBox="0 0 124 324" version="1.1">
+        <g>
+          <polygon fill="#6B7280" points="62,10 50,50 74,50"/>
+          <polygon fill="#6B7280" points="50,50 30,150 94,150"/>
+          <polygon fill="#6B7280" points="30,150 10,250 114,250"/>
+          <polygon fill="#6B7280" points="10,250 0,324 124,324"/>
+          <rect fill="#4B5563" x="58" y="0" width="8" height="324"/>
+        </g>
+      </svg>`
+    },
+    appearance: {
+      color: '#6B7280',
+      colorCustomizable: true,
+      colorProperty: 'fill'
+    },
+    isCustom: false,
+    description: '法国巴黎著名地标'
+  },
+
+  // 生物 - 长颈鹿
+  {
+    id: 'bio-giraffe',
+    name: '长颈鹿',
+    height: 5.5,
+    width: 2,
+    type: CharacterType.BIOLOGY,
+    media: {
+      type: 'svg',
+      url: '/assets/svg/giraffe.svg',
+      thumbnailUrl: '/assets/svg/giraffe.svg',
+      svgContent: `<svg viewBox="0 0 100 275" version="1.1">
+        <g>
+          <ellipse fill="#D97706" cx="50" cy="20" rx="8" ry="6"/>
+          <rect fill="#D97706" x="48" y="26" width="4" height="120"/>
+          <ellipse fill="#D97706" cx="50" cy="150" rx="15" ry="25"/>
+          <rect fill="#D97706" x="35" y="175" width="6" height="80"/>
+          <rect fill="#D97706" x="45" y="175" width="6" height="80"/>
+          <rect fill="#D97706" x="55" y="175" width="6" height="80"/>
+          <rect fill="#D97706" x="65" y="175" width="6" height="80"/>
+          <circle fill="#8B4513" cx="47" cy="18" r="1"/>
+          <circle fill="#8B4513" cx="53" cy="18" r="1"/>
+        </g>
+      </svg>`
+    },
+    appearance: {
+      color: '#D97706',
+      colorCustomizable: true,
+      colorProperty: 'fill'
+    },
+    isCustom: false,
+    description: '世界上最高的陆地动物'
+  }
   
-  // 生物 - 植物
-  { id: 'bio-redwood', name: '红杉树', height: 11500, width: 800, type: CharacterType.BIOLOGY, color: '#059669', isCustom: false },
-  { id: 'bio-bamboo', name: '竹子', height: 3000, width: 50, type: CharacterType.BIOLOGY, color: '#16A34A', isCustom: false },
-  
-  // 生物 - 微生物
-  { id: 'bio-bacteria', name: '细菌', height: 0.0002, width: 0.0001, type: CharacterType.BIOLOGY, color: '#7C3AED', isCustom: false },
-  { id: 'bio-virus', name: '病毒', height: 0.00001, width: 0.00001, type: CharacterType.BIOLOGY, color: '#DC2626', isCustom: false },
-  
-  // 极小尺度 - 亚原子级别
-  { id: 'physics-atom', name: '氢原子', height: 0.0000001, width: 0.0000001, type: CharacterType.OBJECT, color: '#8B5CF6', isCustom: false },
-  { id: 'physics-proton', name: '质子', height: 0.000000001, width: 0.000000001, type: CharacterType.OBJECT, color: '#7C3AED', isCustom: false },
-  { id: 'physics-electron', name: '电子', height: 0.000000000001, width: 0.000000000001, type: CharacterType.OBJECT, color: '#6366F1', isCustom: false },
-  { id: 'physics-quark', name: '夸克', height: 0.0000000000001, width: 0.0000000000001, type: CharacterType.OBJECT, color: '#4F46E5', isCustom: false },
-  
-  // 极大尺度 - 天体级别
-  { id: 'space-moon', name: '月球', height: 347400000000, width: 347400000000, type: CharacterType.OBJECT, color: '#9CA3AF', isCustom: false },
-  { id: 'space-jupiter', name: '木星', height: 1428400000000, width: 1428400000000, type: CharacterType.OBJECT, color: '#F59E0B', isCustom: false },
-  { id: 'space-sirius', name: '天狼星', height: 235920000000000, width: 235920000000000, type: CharacterType.OBJECT, color: '#3B82F6', isCustom: false },
-  { id: 'space-betelgeuse', name: '参宿四', height: 118000000000000000, width: 118000000000000000, type: CharacterType.OBJECT, color: '#EF4444', isCustom: false },
-  { id: 'space-solar-system', name: '太阳系', height: 1196000000000000000, width: 1196000000000000000, type: CharacterType.OBJECT, color: '#6366F1', isCustom: false },
-  { id: 'space-light-year', name: '光年', height: 94607304725800000000, width: 94607304725800000000, type: CharacterType.OBJECT, color: '#8B5CF6', isCustom: false },
-  { id: 'space-milky-way', name: '银河系', height: 9460730472580000000000000, width: 9460730472580000000000000, type: CharacterType.OBJECT, color: '#A855F7', isCustom: false },
-  { id: 'space-observable-universe', name: '可观测宇宙', height: 8.7e+28, width: 8.7e+28, type: CharacterType.OBJECT, color: '#0F172A', isCustom: false },
+  // 注意：其他旧格式角色数据已迁移，仅保留上述测试角色
 ];
 
 // 单位转换函数（保持向后兼容）
-const convertHeight = (cm: number, unit: Unit): string => {
+const convertHeight = (m: number, unit: Unit): string => {
   switch (unit) {
     case Unit.CM:
-      return `${cm}cm`;
+      return `${(m * 100).toFixed(1)}cm`;
     case Unit.FT_IN:
-      const totalInches = cm / 2.54;
+      const totalInches = (m * 100) / 2.54;
       const feet = Math.floor(totalInches / 12);
       const inches = totalInches % 12;
       return `${feet}' ${inches.toFixed(1)}"`;
     default:
-      return `${cm}cm`;
+      return `${(m * 100).toFixed(1)}cm`;
   }
 };
 
 // 新的智能高度转换函数
-const convertHeightSmart = (cm: number, preferMetric: boolean = true): string => {
-  const bestUnit = getBestUnit(cm, preferMetric);
-  const result = convertHeightPrecision(cm, bestUnit);
+const convertHeightSmart = (m: number, preferMetric: boolean = true): string => {
+  const bestUnit = getBestUnit(m, preferMetric);
+  const result = convertHeightPrecision(m, bestUnit);
   return `${result.formatted}${bestUnit}`;
 };
 
-// 智能英制单位显示函数：人身高级别用英尺英寸，英里级别用科学计数法
-const convertHeightSmartImperial = (cm: number): string => {
-  const bestUnit = getBestUnit(cm, false);
-  
-  // 如果是英里级别，使用科学计数法
-  if (bestUnit === UnitSystem.MILE) {
-    return convertHeightSmart(cm, false); // 使用现有的智能转换（包含科学计数法）
+// 智能英制单位显示函数 - 新的统一规则
+const convertHeightSmartImperial = (m: number): string => {
+  const totalInches = (m * 100) / 2.54;
+  const totalFeet = totalInches / 12;
+
+  // 小于等于1英尺：用英寸单位（必要时用科学计数法）
+  if (totalFeet <= 1) {
+    const inchesValue = totalInches;
+    if (Math.abs(inchesValue) >= 1000 || (Math.abs(inchesValue) < 0.001 && inchesValue !== 0)) {
+      return `${formatScientificNotation(inchesValue, 3)}in`;
+    }
+    return `${formatNumber(inchesValue)}in`;
   }
-  
-  // 如果是英寸或英尺级别（人身高范围），使用传统的英尺'英寸"格式
-  if (bestUnit === UnitSystem.INCH || bestUnit === UnitSystem.FOOT) {
-    const totalInches = cm / 2.54;
+
+  // 1英尺到10000英尺：用英尺英寸格式
+  if (totalFeet < 10000) {
     const feet = Math.floor(totalInches / 12);
     const inches = totalInches % 12;
     return `${feet}' ${inches.toFixed(1)}"`;
   }
-  
-  // 其他情况使用智能转换
-  return convertHeightSmart(cm, false);
+
+  // 大于等于10000英尺：用英里单位（必要时用科学计数法）
+  const miles = totalFeet / 5280;
+  if (Math.abs(miles) >= 1000 || (Math.abs(miles) < 0.001 && miles !== 0)) {
+    return `${formatScientificNotation(miles, 3)}mi`;
+  }
+  return `${formatNumber(miles)}mi`;
+};
+
+// 获取英制网格标题的单位显示
+const getImperialGridUnitLabel = (maxHeightInComparison: number): string => {
+  const maxTotalFeet = ((maxHeightInComparison * 100) / 2.54) / 12;
+
+  if (maxTotalFeet <= 1) {
+    return "in"; // 英寸
+  } else if (maxTotalFeet < 10000) {
+    return "ft/in"; // 英尺英寸
+  } else {
+    return "mi"; // 英里
+  }
+};
+
+// 网格刻度线专用的英制显示函数 - 基于最大高度判断显示方式
+const convertHeightForGridImperial = (m: number, maxHeightInComparison: number): string => {
+  const maxTotalFeet = ((maxHeightInComparison * 100) / 2.54) / 12;
+  const totalInches = (m * 100) / 2.54;
+  const totalFeet = totalInches / 12;
+
+  // 根据最大高度确定显示方式
+  if (maxTotalFeet <= 1) {
+    // 最大高度小于等于1英尺：统一用英寸
+    const inchesValue = totalInches;
+    if (Math.abs(inchesValue) >= 1000 || (Math.abs(inchesValue) < 0.001 && inchesValue !== 0)) {
+      return formatScientificNotation(inchesValue, 3);
+    }
+    return formatNumber(inchesValue);
+  } else if (maxTotalFeet < 10000) {
+    // 最大高度在1-10000英尺：统一用英尺英寸格式
+    const feet = Math.floor(totalInches / 12);
+    const inches = totalInches % 12;
+    return `${feet}' ${inches.toFixed(1)}"`;
+  } else {
+    // 最大高度大于等于10000英尺：统一用英里
+    const miles = totalFeet / 5280;
+    if (Math.abs(miles) >= 1000 || (Math.abs(miles) < 0.001 && miles !== 0)) {
+      return formatScientificNotation(miles, 3);
+    }
+    return formatNumber(miles);
+  }
 };
 
 // 获取最大高度用于动态单位制选择
 const getMaxHeightInComparison = (items: ComparisonItem[]): number => {
-  if (items.length === 0) return 200; // 默认值
+  if (items.length === 0) return 2; // 默认值（米）
   return Math.max(...items.map(item => item.character.height));
 };
 
@@ -390,11 +922,12 @@ const HeightCompareTool: React.FC = () => {
   });
 
   const [chartAreaHeightPix, setChartAreaHeightPix] = useState(0);
-  const [pixelsPerCmState, setPixelsPerCmState] = useState(1); // 添加新的状态
+  const [pixelsPerMState, setPixelsPerMState] = useState(1); // 添加新的状态
+  const [showImageUploadModal, setShowImageUploadModal] = useState(false);
 
   // 添加重置缩放函数
   const resetZoom = () => {
-    setPixelsPerCmState(1); // 重置为默认值1，这会触发自动计算
+    setPixelsPerMState(1); // 重置为默认值1，这会触发自动计算
   };
 
   // 计算图表展示区的像素高度
@@ -424,23 +957,23 @@ const HeightCompareTool: React.FC = () => {
     };
   }, []);
 
-  /**当前cm与px（px为屏幕像素）的转换比例，即1cm等于多少px */
-  const pixelsPerCm = useMemo(() => {
+  /**当前m与px（px为屏幕像素）的转换比例，即1m等于多少px */
+  const pixelsPerM = useMemo(() => {
     // 如果有手动调整的值，使用手动调整的值
-    if (pixelsPerCmState !== 1) {
-      return pixelsPerCmState;
+    if (pixelsPerMState !== 1) {
+      return pixelsPerMState;
     }
     // 否则使用自动计算的值，使用高精度计算
     const maxHeight = getMaxHeightInComparison(comparisonItems);
     const availableHeight = chartAreaHeightPix - 70;
-    
+
     // 使用高精度计算避免极端情况下的精度损失
     const heightPrecision = Precision.from(availableHeight);
     const maxHeightPrecision = Precision.from(maxHeight);
     const ratio = heightPrecision.divide(maxHeightPrecision);
-    
+
     return ratio.toNumber();
-  }, [chartAreaHeightPix, comparisonItems, pixelsPerCmState]);
+  }, [chartAreaHeightPix, comparisonItems, pixelsPerMState]);
 
   const handleZoom = useCallback((zoomDelta: number) => {
     if (comparisonItems.length == 0) {
@@ -464,11 +997,11 @@ const HeightCompareTool: React.FC = () => {
     zoomStateRef.current.scrollLeftRatio = scrollLeftRatio;
 
     // 根据滚轮方向调整缩放比例
-    const currentScale = pixelsPerCm;
+    const currentScale = pixelsPerM;
     const newScale = currentScale + (currentScale * zoomDelta); // 添加最小缩放限制
 
-    setPixelsPerCmState(newScale);
-  }, [pixelsPerCm, comparisonItems]);
+    setPixelsPerMState(newScale);
+  }, [pixelsPerM, comparisonItems]);
 
   // 添加缩放事件处理
   useEffect(() => {
@@ -491,7 +1024,7 @@ const HeightCompareTool: React.FC = () => {
     return () => {
       chartArea.removeEventListener('wheel', handleWheel);
     };
-  }, [handleZoom]); // 移除 pixelsPerCm 依赖，避免重复绑定事件
+  }, [handleZoom]); // 移除 pixelsPerM 依赖，避免重复绑定事件
 
   const [leftPanelSplit, setLeftPanelSplit] = useState(50); // 百分比，控制上下两个区域的高度分配
   const [isDragging, setIsDragging] = useState(false);
@@ -985,6 +1518,37 @@ const HeightCompareTool: React.FC = () => {
     setSelectedCharacter({ ...selectedCharacter, [key]: value });
   };
 
+  // 处理图片上传并创建角色
+  const handleImageUpload = (imageData: {
+    imageUrl: string;
+    heightInM: number;
+    widthInM?: number;
+    aspectRatio: number;
+  }) => {
+    const { imageUrl, heightInM, widthInM, aspectRatio } = imageData;
+    
+    // 计算宽度：如果没有指定宽度，则根据高度和宽高比计算
+    const calculatedWidthInM = widthInM || (heightInM * aspectRatio);
+    
+    // 创建新角色
+    const newCharacter: Character = {
+      id: `upload-${Date.now()}-${Math.random()}`,
+      name: '上传角色',
+      height: heightInM,
+      width: calculatedWidthInM,
+      type: CharacterType.UPLOAD,
+      color: '#10B981',
+      isCustom: true,
+      imageUrl: imageUrl
+    };
+
+    // 添加到比较列表
+    addToComparison(newCharacter);
+    
+    // 关闭上传弹窗
+    setShowImageUploadModal(false);
+  };
+
   // 处理拖拽分隔线
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
@@ -1331,7 +1895,10 @@ const HeightCompareTool: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-gray-600">
-                            {convertHeightSmart(item.character.height, true)}
+                            {unit === Unit.CM ?
+                              convertHeightSmart(item.character.height, true) :
+                              convertHeightSmartImperial(item.character.height)
+                            }
                           </span>
                           <button
                             title="拖拽调整位置"
@@ -1454,15 +2021,12 @@ const HeightCompareTool: React.FC = () => {
                       <div className="text-4xl mb-4">📷</div>
                       <h3 className="text-lg font-medium text-gray-900 mb-2">上传图片</h3>
                       <p className="text-sm text-gray-500 mb-4">
-                        支持 JPG、PNG、GIF 格式<br/>
+                        支持 JPG、PNG、GIF 格式<br />
                         上传后可进行裁剪
                       </p>
-                      <button 
+                      <button
                         className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors"
-                        onClick={() => {
-                          // TODO: 实现图片上传功能
-                          alert('图片上传功能即将开发完成！');
-                        }}
+                        onClick={() => setShowImageUploadModal(true)}
                       >
                         选择图片
                       </button>
@@ -1472,67 +2036,67 @@ const HeightCompareTool: React.FC = () => {
                   /* 预设角色网格 */
                   <div className="grid grid-cols-3 gap-2">
                     {filteredCharacters.map(character => (
-                    <div
-                      key={character.id}
-                      data-character-item="true"
-                      className="relative group cursor-pointer"
-                      onClick={() => {
-                        addToComparison(character);
-                      }}
-                    >
-                      {/* 正方形容器 */}
-                      <div className="aspect-square w-full flex items-center justify-center bg-gray-50 rounded overflow-hidden">
-                        {/* 角色缩略图 - 保持原始比例 */}
-                        <div
-                          className={`w-12 h-16 rounded flex items-center justify-center text-white text-sm font-bold hover:ring-2 hover:ring-gray-300 hover:ring-offset-1`}
-                          style={{
-                            backgroundColor: character.color
-                          }}
-                        >
-                          {character.type === CharacterType.GENERIC ? (
-                            character.svgIcon ? (
-                              // 这里可以根据 svgIcon 显示不同的图标
-                              character.name.includes('男性') ? '👨' :
-                              character.name.includes('女性') ? '👩' :
-                              character.name.includes('中性') ? '🧑' :
-                              character.name.includes('儿童') ? '🧒' : '👤'
-                            ) : '👤'
-                          ) :
-                          character.type === CharacterType.CELEBRITY ? (
-                            character.name.includes('动漫') || character.name.includes('柯南') || character.name.includes('路飞') ? '👥' :
-                            character.name.includes('神话') || character.name.includes('宙斯') ? '⚡' : '⭐'
-                          ) :
-                          character.type === CharacterType.OBJECT ? (
-                            character.name.includes('塔') || character.name.includes('建筑') ? '🏗️' :
-                            character.name.includes('山') || character.name.includes('峰') ? '🏔️' :
-                            character.name.includes('地球') ? '🌍' :
-                            character.name.includes('太阳') ? '☀️' : '🏢'
-                          ) :
-                          character.type === CharacterType.BIOLOGY ? (
-                            character.name.includes('树') || character.name.includes('竹') ? '🌳' :
-                            character.name.includes('鲸') ? '🐋' :
-                            character.name.includes('长颈鹿') ? '🦒' :
-                            character.name.includes('大象') ? '🐘' :
-                            character.name.includes('蚂蚁') ? '🐜' :
-                            character.name.includes('细菌') || character.name.includes('病毒') ? '🦠' : '🐾'
-                          ) :
-                          character.type === CharacterType.UPLOAD ? '📷' : '○'}
+                      <div
+                        key={character.id}
+                        data-character-item="true"
+                        className="relative group cursor-pointer"
+                        onClick={() => {
+                          addToComparison(character);
+                        }}
+                      >
+                        {/* 正方形容器 */}
+                        <div className="aspect-square w-full flex items-center justify-center bg-gray-50 rounded overflow-hidden">
+                          {/* 角色缩略图 - 保持原始比例 */}
+                          <div
+                            className={`w-12 h-16 rounded flex items-center justify-center text-white text-sm font-bold hover:ring-2 hover:ring-gray-300 hover:ring-offset-1`}
+                            style={{
+                              backgroundColor: character.color
+                            }}
+                          >
+                            {character.type === CharacterType.GENERIC ? (
+                              character.svgIcon ? (
+                                // 这里可以根据 svgIcon 显示不同的图标
+                                character.name.includes('男性') ? '👨' :
+                                  character.name.includes('女性') ? '👩' :
+                                    character.name.includes('中性') ? '🧑' :
+                                      character.name.includes('儿童') ? '🧒' : '👤'
+                              ) : '👤'
+                            ) :
+                              character.type === CharacterType.CELEBRITY ? (
+                                character.name.includes('动漫') || character.name.includes('柯南') || character.name.includes('路飞') ? '👥' :
+                                  character.name.includes('神话') || character.name.includes('宙斯') ? '⚡' : '⭐'
+                              ) :
+                                character.type === CharacterType.OBJECT ? (
+                                  character.name.includes('塔') || character.name.includes('建筑') ? '🏗️' :
+                                    character.name.includes('山') || character.name.includes('峰') ? '🏔️' :
+                                      character.name.includes('地球') ? '🌍' :
+                                        character.name.includes('太阳') ? '☀️' : '🏢'
+                                ) :
+                                  character.type === CharacterType.BIOLOGY ? (
+                                    character.name.includes('树') || character.name.includes('竹') ? '🌳' :
+                                      character.name.includes('鲸') ? '🐋' :
+                                        character.name.includes('长颈鹿') ? '🦒' :
+                                          character.name.includes('大象') ? '🐘' :
+                                            character.name.includes('蚂蚁') ? '🐜' :
+                                              character.name.includes('细菌') || character.name.includes('病毒') ? '🦠' : '🐾'
+                                  ) :
+                                    character.type === CharacterType.UPLOAD ? '📷' : '○'}
+                          </div>
                         </div>
-                      </div>
 
-                      {/* 悬浮提示 */}
-                      <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 
+                        {/* 悬浮提示 */}
+                        <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 
                         w-full max-h-full break-words overflow-hidden whitespace-normal flex flex-col justify-center items-center bg-white/80 text-gray-800 
                         opacity-0 text-xs rounded-lg group-hover:opacity-100 z-10 backdrop-blur-sm border 
                         border-gray-200/50 shadow-lg transition-all duration-200 ease-out group-hover:scale-105 
                         `}>
-                        <div className="font-medium text-gray-900 text-center">{character.name}</div>
-                        <div className="text-gray-600 text-[11px] text-center">
-                          {convertHeightSmart(character.height, true)} / {convertHeightSmartImperial(character.height)}
+                          <div className="font-medium text-gray-900 text-center">{character.name}</div>
+                          <div className="text-gray-600 text-[11px] text-center">
+                            {convertHeightSmart(character.height, true)} / {convertHeightSmartImperial(character.height)}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                   </div>
                 )}
               </div>
@@ -1554,7 +2118,7 @@ const HeightCompareTool: React.FC = () => {
                       {comparisonItems.length} 个对象
                     </div>
                     <div className="text-sm text-gray-600">
-                      pixelsPerCm: {formatNumber(pixelsPerCm, 10)}
+                      pixelsPerM: {formatNumber(pixelsPerM, 10)}
                     </div>
                     <div className="text-sm text-gray-600">
                       chartAreaHeightPix: {chartAreaHeightPix}
@@ -1574,12 +2138,12 @@ const HeightCompareTool: React.FC = () => {
                     </div>
                     <button
                       onClick={resetZoom}
-                      className={`p-2 rounded transition-colors ${pixelsPerCmState === 1
+                      className={`p-2 rounded transition-colors ${pixelsPerMState === 1
                         ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
                         : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
                         }`}
                       title="重置缩放"
-                      disabled={pixelsPerCmState === 1}
+                      disabled={pixelsPerMState === 1}
                     >
                       <RotateCcw className="w-4 h-4" />
                     </button>
@@ -1627,20 +2191,35 @@ const HeightCompareTool: React.FC = () => {
                 <div ref={chartAreaRef} className="relative px-20 h-full flex items-end justify-center">
                   {/* 缩放控件 */}
                   <div className="absolute -top-2 right-[5rem] z-[1002] flex flex-col gap-1">
-                    <button
-                      onClick={() => handleZoom(0.2)}
-                      className="p-2 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-blue-600 shadow-sm hover:shadow-md transition-all"
-                      title="放大 (按住 Ctrl + 滚动鼠标快捷缩放)"
-                    >
-                      <ZoomIn className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleZoom(-0.2)}
-                      className="p-2 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-blue-600 shadow-sm hover:shadow-md transition-all"
-                      title="缩小 (按住 Ctrl + 滚动鼠标快捷缩放)"
-                    >
-                      <ZoomOut className="w-4 h-4" />
-                    </button>
+                    <div className="relative group">
+                      <button
+                        onClick={() => handleZoom(0.2)}
+                        className="p-2 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-blue-600 shadow-sm hover:shadow-md transition-all"
+                      >
+                        <ZoomIn className="w-4 h-4" />
+                      </button>
+                      {/* 自定义tooltip */}
+                      <div className="absolute left-1/2 transform -translate-x-1/2 -translate-y-full top-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[1003]">
+                        <div className="bg-white text-gray-700 text-xs rounded py-1 px-2 whitespace-nowrap">
+                          放大 (按住 Ctrl + 滚动鼠标快捷缩放)
+                        </div>
+                      </div>
+                    </div>
+                    <div className="relative group">
+                      <button
+                        onClick={() => handleZoom(-0.2)}
+                        className="p-2 rounded bg-white/80 hover:bg-white text-gray-600 hover:text-blue-600 shadow-sm hover:shadow-md transition-all"
+                      >
+                        <ZoomOut className="w-4 h-4" />
+                      </button>
+                      {/* 自定义tooltip */}
+                      <div className="absolute left-1/2 transform -translate-x-1/2 translate-y-full bottom-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[1003]">
+                        <div className="bg-white text-gray-700 text-xs rounded py-1 px-2 whitespace-nowrap">
+                          缩小 (按住 Ctrl + 滚动鼠标快捷缩放)
+                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-2 border-r-2 border-t-4 border-transparent border-t-gray-800"></div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* 网格线 */}
@@ -1649,7 +2228,7 @@ const HeightCompareTool: React.FC = () => {
                     const maxHeightInComparison = getMaxHeightInComparison(comparisonItems);
                     const unifiedMetricUnit = getBestUnit(maxHeightInComparison, true);
                     const unifiedImperialUnit = getBestUnit(maxHeightInComparison, false);
-                    
+
                     return (
                       <div className="absolute inset-0 pointer-events-none">
                         {/* 动态单位标签 */}
@@ -1658,22 +2237,22 @@ const HeightCompareTool: React.FC = () => {
                             公制 ({unifiedMetricUnit})
                           </span>
                           <span className="absolute right-4 -top-8 text-sm font-bold text-gray-700">
-                            英制 ({unifiedImperialUnit})
+                            英制 ({getImperialGridUnitLabel(maxHeightInComparison)})
                           </span>
                         </div>
 
                         {Array.from({ length: 21 }, (_, i) => {
                           const heightPercentage = i / 20;
                           const pixHeight = chartAreaHeightPix * heightPercentage;
-                          
+
                           // 使用高精度计算
                           const pixHeightPrecision = Precision.from(pixHeight);
-                          const pixelsPerCmPrecision = Precision.from(pixelsPerCm);
-                          const cmHeight = pixHeightPrecision.divide(pixelsPerCmPrecision).toNumber();
-                          
+                          const pixelsPerMPrecision = Precision.from(pixelsPerM);
+                          const mHeight = pixHeightPrecision.divide(pixelsPerMPrecision).toNumber();
+
                           // 使用统一的单位制进行转换
-                          const metricResult = convertHeightPrecision(cmHeight, unifiedMetricUnit);
-                          const imperialResult = convertHeightPrecision(cmHeight, unifiedImperialUnit);
+                          const metricResult = convertHeightPrecision(mHeight, unifiedMetricUnit);
+                          const imperialDisplay = convertHeightForGridImperial(mHeight, maxHeightInComparison);
 
                           return (
                             <div
@@ -1687,7 +2266,7 @@ const HeightCompareTool: React.FC = () => {
                                     {metricResult.formatted}
                                   </span>
                                   <span className="absolute right-2 -top-2 text-xs text-gray-600">
-                                    {imperialResult.formatted}
+                                    {imperialDisplay}
                                   </span>
                                 </>
                               )}
@@ -1759,7 +2338,7 @@ const HeightCompareTool: React.FC = () => {
                               >
                                 <CharacterDisplay
                                   character={item.character}
-                                  pixelsPerCm={pixelsPerCm}
+                                  pixelsPerM={pixelsPerM}
                                   isSelected={item.selected}
                                   unit={unit}
                                   isDragging={dragState.draggedItemId === item.id}
@@ -1833,14 +2412,15 @@ const HeightCompareTool: React.FC = () => {
                         value={selectedCharacter.height}
                         onChange={(e) => updateCharacter('height', Number(e.target.value))}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        min="30"
-                        max="300"
+                        min="0.3"
+                        max="3"
+                        step="0.01"
                         placeholder="输入身高"
                       />
-                      <span className="px-3 py-2 bg-gray-100 rounded-md text-sm">cm</span>
+                      <span className="px-3 py-2 bg-gray-100 rounded-md text-sm">m</span>
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
-                      {convertHeight(selectedCharacter.height, Unit.FT_IN)}
+                      {unit === Unit.CM ? convertHeightSmart(selectedCharacter.height, true) : convertHeightSmartImperial(selectedCharacter.height)}
                     </div>
                   </div>
 
@@ -1902,7 +2482,7 @@ const HeightCompareTool: React.FC = () => {
                 <div className="flex flex-col items-center px-3">
                   <CharacterDisplay
                     character={draggedItem.character}
-                    pixelsPerCm={pixelsPerCm}
+                    pixelsPerM={pixelsPerM}
                     isSelected={false}
                     unit={unit}
                     isDragging={true}
@@ -1957,6 +2537,13 @@ const HeightCompareTool: React.FC = () => {
             })()}
           </div>
         )}
+
+        {/* 图片上传弹窗 */}
+        <ImageUploadModal
+          isOpen={showImageUploadModal}
+          onClose={() => setShowImageUploadModal(false)}
+          onSave={handleImageUpload}
+        />
       </div>
     </>
   );
