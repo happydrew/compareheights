@@ -3,7 +3,7 @@ export { CharacterType, type Character, Unit, convertHeight };
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Trash2, Search, Users, Share2, Download,
-  Grid, Eye, EyeOff, ArrowLeftRight, RotateCcw, ZoomIn, ZoomOut
+  Grid, Eye, EyeOff, ArrowLeftRight, RotateCcw, ZoomIn, ZoomOut, GripVertical
 } from 'lucide-react';
 import { CharacterDisplay } from './CharacterDisplay';
 import 'simplebar-react/dist/simplebar.min.css';
@@ -135,6 +135,7 @@ const HeightCompareTool: React.FC = () => {
    */
   const [comparisonItems, setComparisonItems] = useState<ComparisonItem[]>([]);
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
+  const [selectedComparisonItemId, setSelectedComparisonItemId] = useState<string | null>(null);
   const [showRightPanel, setShowRightPanel] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CharacterType | 'all'>('all');
@@ -266,6 +267,19 @@ const HeightCompareTool: React.FC = () => {
     draggedElement: null,
   });
 
+  // 添加左侧角色列表拖拽状态
+  const [leftPanelDragState, setLeftPanelDragState] = useState<DragState>({
+    isDragging: false,
+    draggedItemId: null,
+    startMouseX: 0,
+    startMouseY: 0,
+    currentMouseX: 0,
+    currentMouseY: 0,
+    fixedElementX: 0,
+    fixedElementY: 0,
+    draggedElement: null,
+  });
+
   // 添加拖拽相关的ref
   const charactersContainerRef = useRef<HTMLDivElement>(null);
 
@@ -317,6 +331,7 @@ const HeightCompareTool: React.FC = () => {
       if (!isClickInRightPanel && !isClickOnCharacterItem && !isClickOnEditButton) {
         setShowRightPanel(false);
         setSelectedCharacter(null);
+        setSelectedComparisonItemId(null);
         setComparisonItems(items => items.map(item => ({ ...item, selected: false })));
       }
     };
@@ -453,6 +468,122 @@ const HeightCompareTool: React.FC = () => {
     document.body.style.userSelect = '';
   }, []);
 
+  // 左侧角色列表拖拽处理函数
+  const handleLeftPanelDragStart = useCallback((itemId: string, e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const container = characterListRef.current;
+    if (!container) return;
+
+    const itemElement = container.querySelector(`[data-left-item-id="${itemId}"]`) as HTMLElement;
+    if (!itemElement) return;
+
+    const rect = itemElement.getBoundingClientRect();
+
+    setLeftPanelDragState({
+      isDragging: true,
+      draggedItemId: itemId,
+      startMouseX: clientX,
+      startMouseY: clientY,
+      currentMouseX: clientX,
+      currentMouseY: clientY,
+      fixedElementX: rect.left,
+      fixedElementY: rect.top,
+      draggedElement: itemElement,
+    });
+
+    document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  const handleLeftPanelDragMove = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!leftPanelDragState.isDragging || !leftPanelDragState.draggedItemId) return;
+
+    e.preventDefault();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const container = characterListRef.current;
+    if (!container) return;
+
+    setLeftPanelDragState(prev => ({
+      ...prev,
+      currentMouseX: clientX,
+      currentMouseY: clientY
+    }));
+
+    // 计算拖拽元素应该与哪个元素交换
+    const items = Array.from(container.querySelectorAll('[data-left-item-id]')).filter(
+      item => (item as HTMLElement).getAttribute('data-left-item-id') !== leftPanelDragState.draggedItemId
+    );
+
+    const draggedIndex = comparisonItems.findIndex(item => item.id === leftPanelDragState.draggedItemId);
+    if (draggedIndex === -1) return;
+
+    const dragOffsetY = clientY - leftPanelDragState.startMouseY;
+    const fixedElementHeight = leftPanelDragState.draggedElement?.offsetHeight || 0;
+    const fixedTopEdge = leftPanelDragState.fixedElementY + dragOffsetY;
+    const fixedBottomEdge = fixedTopEdge + fixedElementHeight;
+
+    let targetIndex = draggedIndex;
+    let closestDistance = Infinity;
+
+    items.forEach((element) => {
+      const itemId = (element as HTMLElement).getAttribute('data-left-item-id');
+      const actualIndex = comparisonItems.findIndex(item => item.id === itemId);
+      if (actualIndex === -1) return;
+
+      const rect = (element as HTMLElement).getBoundingClientRect();
+      const elementCenterY = rect.top + rect.height / 2;
+
+      const distance = Math.abs((fixedTopEdge + fixedBottomEdge) / 2 - elementCenterY);
+
+      if (actualIndex !== draggedIndex && distance < closestDistance) {
+        if ((actualIndex > draggedIndex && fixedBottomEdge > elementCenterY) ||
+          (actualIndex < draggedIndex && fixedTopEdge < elementCenterY)) {
+          targetIndex = actualIndex;
+          closestDistance = distance;
+        }
+      }
+    });
+
+    if (targetIndex !== draggedIndex) {
+      const newItems = [...comparisonItems];
+      const [draggedItem] = newItems.splice(draggedIndex, 1);
+      newItems.splice(targetIndex, 0, draggedItem);
+
+      const updatedItems = newItems.map((item, index) => ({
+        ...item,
+        order: index
+      }));
+
+      setComparisonItems(updatedItems);
+    }
+  }, [leftPanelDragState, comparisonItems]);
+
+  const handleLeftPanelDragEnd = useCallback((e: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setLeftPanelDragState({
+      isDragging: false,
+      draggedItemId: null,
+      startMouseX: 0,
+      startMouseY: 0,
+      currentMouseX: 0,
+      currentMouseY: 0,
+      fixedElementX: 0,
+      fixedElementY: 0,
+      draggedElement: null,
+      preventNextClick: true
+    });
+
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+
   // 添加全局事件监听
   useEffect(() => {
     if (dragState.isDragging) {
@@ -475,6 +606,28 @@ const HeightCompareTool: React.FC = () => {
     }
   }, [dragState.isDragging, handleDragMove, handleDragEnd]);
 
+  // 添加左侧角色列表拖拽的全局事件监听
+  useEffect(() => {
+    if (leftPanelDragState.isDragging) {
+      const handleMouseMove = (e: MouseEvent) => handleLeftPanelDragMove(e);
+      const handleMouseUp = (e) => handleLeftPanelDragEnd(e);
+      const handleTouchMove = (e: TouchEvent) => handleLeftPanelDragMove(e);
+      const handleTouchEnd = (e: TouchEvent) => handleLeftPanelDragEnd(e);
+
+      document.addEventListener('mousemove', handleMouseMove, { passive: false });
+      document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+      document.addEventListener('touchend', handleTouchEnd);
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener('touchmove', handleTouchMove);
+        document.removeEventListener('touchend', handleTouchEnd);
+      };
+    }
+  }, [leftPanelDragState.isDragging, handleLeftPanelDragMove, handleLeftPanelDragEnd]);
+
   // 计算占位元素的样式（被拖拽时显示为透明占位）
   const getItemStyle = useCallback((itemId: string, index: number): React.CSSProperties => {
     if (!dragState.isDragging || itemId !== dragState.draggedItemId) {
@@ -488,6 +641,19 @@ const HeightCompareTool: React.FC = () => {
     };
   }, [dragState]);
 
+  // 计算左侧角色列表项目的样式
+  const getLeftPanelItemStyle = useCallback((itemId: string): React.CSSProperties => {
+    if (!leftPanelDragState.isDragging || itemId !== leftPanelDragState.draggedItemId) {
+      return {};
+    }
+
+    // 被拖拽的元素在原位置显示为透明占位
+    return {
+      opacity: 0.3,
+      pointerEvents: 'none'
+    };
+  }, [leftPanelDragState]);
+
 
   // 筛选角色
   const filteredCharacters = PRESET_CHARACTERS.filter(char => {
@@ -498,9 +664,38 @@ const HeightCompareTool: React.FC = () => {
 
 
   const addToComparison = (character: Character) => {
+    // 计算相同原始角色的数量，用于生成序号
+    let maxSimilarNameIndex: number = -1;
+    for (let i = 0; i < comparisonItems.length; i++) {
+      if (comparisonItems[i].character.name.length >= character.name.length &&
+        comparisonItems[i].character.name.startsWith(character.name)) {
+        const indexStr = comparisonItems[i].character.name.slice(character.name.length);
+        if (indexStr == null || indexStr == '') {
+          maxSimilarNameIndex = 0;
+        } else {
+          try {
+            const index = parseInt(indexStr);
+            if (index > maxSimilarNameIndex) {
+              maxSimilarNameIndex = index;
+            }
+          } catch (e) {
+            console.warn(' addToComparison, parse name index failed: ', e);
+          }
+        }
+      }
+    }
+
+    // 创建角色的深拷贝，避免引用同一个对象
+    const newCharacter: Character = {
+      ...character,
+      id: `${character.id}-${Date.now()}-${Math.random()}`, // 确保ID唯一
+      name: maxSimilarNameIndex == -1 ? character.name : `${character.name} ${maxSimilarNameIndex + 1}`,
+      isCustom: true // 标记为自定义，允许编辑
+    };
+
     const newItem: ComparisonItem = {
-      id: `${character.id}-${Date.now()}`,
-      character,
+      id: `comparison-${Date.now()}-${Math.random()}`,
+      character: newCharacter,
       visible: true,
       selected: false,
       order: comparisonItems.length
@@ -515,11 +710,13 @@ const HeightCompareTool: React.FC = () => {
   const clearAllCharacters = () => {
     setComparisonItems([]);
     setSelectedCharacter(null);
+    setSelectedComparisonItemId(null);
     setShowRightPanel(false);
   };
 
   const selectComparisonItem = (item: ComparisonItem) => {
     setSelectedCharacter(item.character);
+    setSelectedComparisonItemId(item.id);
     setShowRightPanel(true);
     setComparisonItems(comparisonItems.map(i => ({
       ...i,
@@ -528,11 +725,11 @@ const HeightCompareTool: React.FC = () => {
   };
 
   const updateCharacter = (key: string, value: any) => {
-    if (!selectedCharacter) return;
+    if (!selectedCharacter || !selectedComparisonItemId) return;
 
     // 更新比较列表中的角色
     setComparisonItems(comparisonItems.map(item =>
-      item.character.id === selectedCharacter.id
+      item.id === selectedComparisonItemId
         ? { ...item, character: { ...item.character, [key]: value } }
         : item
     ));
@@ -869,35 +1066,53 @@ const HeightCompareTool: React.FC = () => {
                 {comparisonItems.length === 0 ? (
                   <p className="text-gray-500 text-sm">暂无比较对象</p>
                 ) : (
-                  comparisonItems.map(item => (
-                    <div
-                      key={item.id}
-                      data-character-item="true"
-                      data-item-id={item.id}
-                      className={`flex items-center justify-between p-2 text-sm border-l-4 cursor-pointer ${item.selected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
-                        }`}
-                      onClick={() => selectComparisonItem(item)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{item.character.name}</span>
+                  comparisonItems
+                    .sort((a, b) => a.order - b.order)
+                    .map(item => (
+                      <div
+                        key={item.id}
+                        data-character-item="true"
+                        data-item-id={item.id}
+                        data-left-item-id={item.id}
+                        className={`flex items-center justify-between p-2 text-sm border-l-4 cursor-pointer transition-all ${item.selected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
+                          } ${leftPanelDragState.isDragging && leftPanelDragState.draggedItemId === item.id ? 'dragging-item' : ''}`}
+                        style={getLeftPanelItemStyle(item.id)}
+                        onClick={() => !leftPanelDragState.isDragging && selectComparisonItem(item)}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{item.character.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-600">
+                            {convertHeight(item.character.height, unit)}
+                          </span>
+                          <button
+                            title="拖拽调整位置"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              handleLeftPanelDragStart(item.id, e);
+                            }}
+                            onTouchStart={(e) => {
+                              e.stopPropagation();
+                              handleLeftPanelDragStart(item.id, e);
+                            }}
+                            className="text-gray-400 hover:text-gray-600 p-1 cursor-grab hover:bg-gray-100 rounded"
+                          >
+                            <GripVertical className="w-3 h-3" />
+                          </button>
+                          <button
+                            title="删除角色"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeFromComparison(item.id);
+                            }}
+                            className="text-red-500 hover:text-red-700 p-1"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-600">
-                          {convertHeight(item.character.height, unit)}
-                        </span>
-                        <button
-                          title="删除角色"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeFromComparison(item.id);
-                          }}
-                          className="text-red-500 hover:text-red-700 p-1"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                    ))
                 )}
               </div>
             </div>
@@ -1006,9 +1221,13 @@ const HeightCompareTool: React.FC = () => {
                       </div>
 
                       {/* 悬浮提示 */}
-                      <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 px-2 py-1 bg-gray-800/80 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 z-10 backdrop-blur-sm`}>
-                        <div className="font-medium">{character.name}</div>
-                        <div className="text-gray-300">
+                      <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 
+                        w-full max-h-full break-words overflow-hidden whitespace-normal flex flex-col justify-center items-center bg-white/80 text-gray-800 
+                        opacity-0 text-xs rounded-lg group-hover:opacity-100 z-10 backdrop-blur-sm border 
+                        border-gray-200/50 shadow-lg transition-all duration-200 ease-out group-hover:scale-105 
+                        `}>
+                        <div className="font-medium text-gray-900 text-center">{character.name}</div>
+                        <div className="text-gray-600 text-[11px] text-center">
                           {convertHeight(character.height, Unit.CM)} / {convertHeight(character.height, Unit.FT_IN)}
                         </div>
                       </div>
@@ -1270,6 +1489,7 @@ const HeightCompareTool: React.FC = () => {
                       onClick={() => {
                         setShowRightPanel(false)
                         setSelectedCharacter(null)
+                        setSelectedComparisonItemId(null)
                       }}
                       className="text-gray-500 hover:text-gray-700 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
                     >
@@ -1377,6 +1597,48 @@ const HeightCompareTool: React.FC = () => {
                     onMove={() => { }}
                     onDelete={() => { }}
                   />
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* 左侧角色列表Fixed拖拽元素 */}
+        {leftPanelDragState.isDragging && leftPanelDragState.draggedItemId && leftPanelDragState.draggedElement && (
+          <div
+            style={{
+              position: 'fixed',
+              left: leftPanelDragState.fixedElementX + (leftPanelDragState.currentMouseX - leftPanelDragState.startMouseX),
+              top: leftPanelDragState.fixedElementY + (leftPanelDragState.currentMouseY - leftPanelDragState.startMouseY),
+              zIndex: 1001,
+              pointerEvents: 'none',
+              opacity: 0.9,
+              filter: 'brightness(0.95)',
+              boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
+              transform: 'scale(1.02)',
+              width: leftPanelDragState.draggedElement.offsetWidth,
+            }}
+          >
+            {(() => {
+              const draggedItem = comparisonItems.find(item => item.id === leftPanelDragState.draggedItemId);
+              if (!draggedItem) return null;
+
+              return (
+                <div className="flex items-center justify-between p-2 text-sm border-l-4 border-blue-500 bg-blue-50 rounded">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{draggedItem.character.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-600">
+                      {convertHeight(draggedItem.character.height, unit)}
+                    </span>
+                    <button className="text-gray-400 p-1 cursor-grab">
+                      <GripVertical className="w-3 h-3" />
+                    </button>
+                    <button className="text-red-500 p-1">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
               );
             })()}
