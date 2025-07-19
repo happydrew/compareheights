@@ -1,4 +1,4 @@
-export { CharacterType, type Character, Unit, convertHeight };
+export { CharacterType, type Character, Unit, convertHeight, convertHeightSmart, convertHeightSmartImperial, getBestUnit, UnitSystem, UNIT_CONVERSIONS };
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
@@ -7,6 +7,159 @@ import {
 } from 'lucide-react';
 import { CharacterDisplay } from './CharacterDisplay';
 import 'simplebar-react/dist/simplebar.min.css';
+
+// 高精度数值处理类
+// 注意：当前实现使用JavaScript的number类型，在极端尺寸跨度下可能有精度限制
+// 测试范围：夸克(10^-13 cm) 到 宇宙(10^28 cm)，跨度约10^41
+// JavaScript Number 精度：约15-17位有效数字，最大安全整数2^53-1
+// 对于超过精度范围的极端计算，可能需要考虑使用decimal.js或big.js库
+class Precision {
+  private value: number;
+  private precision: number;
+
+  constructor(value: number | string, precision: number = 15) {
+    this.value = typeof value === 'string' ? parseFloat(value) : value;
+    this.precision = precision;
+  }
+
+  static from(value: number | string, precision?: number): Precision {
+    return new Precision(value, precision);
+  }
+
+  multiply(other: number | Precision): Precision {
+    const otherValue = other instanceof Precision ? other.value : other;
+    return new Precision(this.value * otherValue, this.precision);
+  }
+
+  divide(other: number | Precision): Precision {
+    const otherValue = other instanceof Precision ? other.value : other;
+    return new Precision(this.value / otherValue, this.precision);
+  }
+
+  add(other: number | Precision): Precision {
+    const otherValue = other instanceof Precision ? other.value : other;
+    return new Precision(this.value + otherValue, this.precision);
+  }
+
+  subtract(other: number | Precision): Precision {
+    const otherValue = other instanceof Precision ? other.value : other;
+    return new Precision(this.value - otherValue, this.precision);
+  }
+
+  toNumber(): number {
+    return this.value;
+  }
+
+  toString(decimals?: number): string {
+    if (decimals !== undefined) {
+      return this.value.toFixed(decimals);
+    }
+    return this.value.toString();
+  }
+
+  toExponential(decimals?: number): string {
+    return this.value.toExponential(decimals);
+  }
+}
+
+// 单位制枚举
+enum UnitSystem {
+  // 公制单位
+  NANOMETER = 'nm',
+  MICROMETER = 'μm', 
+  MILLIMETER = 'mm',
+  CENTIMETER = 'cm',
+  METER = 'm',
+  KILOMETER = 'km',
+  // 英制单位
+  INCH = 'in',
+  FOOT = 'ft',
+  MILE = 'mi'
+}
+
+// 单位转换系数（基于厘米）
+const UNIT_CONVERSIONS = {
+  [UnitSystem.NANOMETER]: 10000000,    // 1cm = 10^7 nm
+  [UnitSystem.MICROMETER]: 10000,       // 1cm = 10^4 μm
+  [UnitSystem.MILLIMETER]: 10,          // 1cm = 10 mm
+  [UnitSystem.CENTIMETER]: 1,           // 1cm = 1 cm
+  [UnitSystem.METER]: 0.01,             // 1cm = 0.01 m
+  [UnitSystem.KILOMETER]: 0.00001,      // 1cm = 10^-5 km
+  [UnitSystem.INCH]: 0.393701,          // 1cm = 0.393701 in
+  [UnitSystem.FOOT]: 0.0328084,         // 1cm = 0.0328084 ft
+  [UnitSystem.MILE]: 0.00000621371      // 1cm = 6.21371×10^-6 mi
+};
+
+// 动态选择最适合的单位制
+function getBestUnit(heightInCm: number, preferMetric: boolean = true): UnitSystem {
+  const absHeight = Math.abs(heightInCm);
+  
+  if (preferMetric) {
+    if (absHeight < 0.001) return UnitSystem.NANOMETER;
+    if (absHeight < 1) return UnitSystem.MICROMETER;
+    if (absHeight < 10) return UnitSystem.MILLIMETER;
+    if (absHeight < 10000) return UnitSystem.CENTIMETER;
+    if (absHeight < 100000) return UnitSystem.METER;
+    return UnitSystem.KILOMETER;
+  } else {
+    if (absHeight < 2.54) return UnitSystem.INCH;
+    if (absHeight < 30480) return UnitSystem.FOOT;
+    return UnitSystem.MILE;
+  }
+}
+
+// 格式化科学计数法为上标形式
+function formatScientificNotation(value: number, decimals: number = 2): string {
+  const exp = value.toExponential(decimals);
+  const parts = exp.split('e');
+  if (parts.length !== 2) return exp;
+  
+  const mantissa = parts[0];
+  let exponent = parseInt(parts[1]);
+  
+  // 上标数字映射
+  const superscriptMap: { [key: string]: string } = {
+    '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+    '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+    '-': '⁻', '+': '⁺'
+  };
+  
+  // 转换指数为上标
+  const expStr = exponent.toString();
+  const superscriptExp = expStr.split('').map(char => superscriptMap[char] || char).join('');
+  
+  return `${mantissa}×10${superscriptExp}`;
+}
+
+// 格式化数值显示
+function formatNumber(value: number, maxLength: number = 8): string {
+  // 如果数值太大或太小，使用科学计数法
+  if (Math.abs(value) >= 1000000 || (Math.abs(value) < 0.001 && value !== 0)) {
+    return formatScientificNotation(value, 2);
+  }
+  
+  // 否则使用常规格式，限制小数位数
+  const str = value.toString();
+  if (str.length > maxLength) {
+    const decimals = Math.max(0, maxLength - Math.floor(Math.log10(Math.abs(value))) - 2);
+    return value.toFixed(decimals);
+  }
+  
+  return str;
+}
+
+// 高精度转换高度
+function convertHeightPrecision(heightInCm: number, targetUnit: UnitSystem): { value: number, formatted: string } {
+  const conversion = UNIT_CONVERSIONS[targetUnit];
+  const precision = Precision.from(heightInCm);
+  const converted = precision.multiply(conversion);
+  const value = converted.toNumber();
+  
+  return {
+    value,
+    formatted: formatNumber(value)
+  };
+}
 
 
 // 单位制枚举
@@ -17,13 +170,11 @@ enum Unit {
 
 // 角色类型枚举
 enum CharacterType {
-  GENERIC = 'generic',    // 通用角色
-  CELEBRITY = 'celebrity', // 名人
-  FICTIONAL = 'fictional', // 虚构角色
-  OBJECT = 'object',      // 物体
-  BUILDING = 'building',   // 建筑
-  ANIMAL = 'animal',      // 动物
-  PLANT = 'plant'         // 植物
+  GENERIC = 'generic',    // 通用角色（通用的男女、无性别者）
+  CELEBRITY = 'celebrity', // 名人（现实人物、动漫角色、书中虚构人物、神话虚构人物等）
+  OBJECT = 'object',      // 物体（建筑物、山、地球、太阳等自然物体）
+  BIOLOGY = 'biology',    // 生物（动物、植物、微生物、病毒等）
+  UPLOAD = 'upload'       // 上传图片
 }
 
 // 角色接口
@@ -37,6 +188,9 @@ interface Character {
   imageUrl?: string; // 角色图片或SVG的URL
   isCustom: boolean;
   description?: string;
+  aspectRatio?: number; // 图片的宽高比（宽/高）
+  isUploadedImage?: boolean; // 是否为用户上传的图片
+  svgIcon?: string; // SVG图标代码（用于通用角色）
 }
 
 // 比较项目接口
@@ -62,26 +216,78 @@ interface StyleSettings {
 
 // 预设角色数据
 const PRESET_CHARACTERS: Character[] = [
-  // 通用角色
-  { id: '1', name: '成年男性', height: 175, width: 50, type: CharacterType.GENERIC, color: '#3B82F6', isCustom: false },
-  { id: '2', name: '成年女性', height: 165, width: 45, type: CharacterType.GENERIC, color: '#EC4899', isCustom: false },
-  { id: '3', name: '青少年', height: 160, width: 40, type: CharacterType.GENERIC, color: '#10B981', isCustom: false },
-  { id: '4', name: '儿童', height: 120, width: 35, type: CharacterType.GENERIC, color: '#F59E0B', isCustom: false },
+  // 通用角色 - 男性
+  { id: 'generic-male-1', name: '男性1', height: 175, width: 50, type: CharacterType.GENERIC, color: '#3B82F6', isCustom: false, svgIcon: 'male1' },
+  { id: 'generic-male-2', name: '男性2', height: 175, width: 50, type: CharacterType.GENERIC, color: '#1E40AF', isCustom: false, svgIcon: 'male2' },
+  { id: 'generic-male-3', name: '男性3', height: 175, width: 50, type: CharacterType.GENERIC, color: '#1E3A8A', isCustom: false, svgIcon: 'male3' },
+  
+  // 通用角色 - 女性
+  { id: 'generic-female-1', name: '女性1', height: 165, width: 45, type: CharacterType.GENERIC, color: '#EC4899', isCustom: false, svgIcon: 'female1' },
+  { id: 'generic-female-2', name: '女性2', height: 165, width: 45, type: CharacterType.GENERIC, color: '#DB2777', isCustom: false, svgIcon: 'female2' },
+  { id: 'generic-female-3', name: '女性3', height: 165, width: 45, type: CharacterType.GENERIC, color: '#BE185D', isCustom: false, svgIcon: 'female3' },
+  
+  // 通用角色 - 中性
+  { id: 'generic-neutral-1', name: '中性1', height: 170, width: 48, type: CharacterType.GENERIC, color: '#10B981', isCustom: false, svgIcon: 'neutral1' },
+  { id: 'generic-neutral-2', name: '中性2', height: 170, width: 48, type: CharacterType.GENERIC, color: '#059669', isCustom: false, svgIcon: 'neutral2' },
+  
+  // 通用角色 - 儿童
+  { id: 'generic-child-1', name: '儿童1', height: 120, width: 35, type: CharacterType.GENERIC, color: '#F59E0B', isCustom: false, svgIcon: 'child1' },
+  { id: 'generic-child-2', name: '儿童2', height: 120, width: 35, type: CharacterType.GENERIC, color: '#D97706', isCustom: false, svgIcon: 'child2' },
 
-  // 名人
-  { id: '5', name: '姚明', height: 226, width: 60, type: CharacterType.CELEBRITY, color: '#8B5CF6', isCustom: false },
-  { id: '6', name: '泰勒·斯威夫特', height: 180, width: 48, type: CharacterType.CELEBRITY, color: '#EF4444', isCustom: false },
+  // 名人 - 现实人物
+  { id: 'celebrity-yao', name: '姚明', height: 226, width: 60, type: CharacterType.CELEBRITY, color: '#8B5CF6', isCustom: false },
+  { id: 'celebrity-taylor', name: '泰勒·斯威夫特', height: 180, width: 48, type: CharacterType.CELEBRITY, color: '#EF4444', isCustom: false },
+  { id: 'celebrity-jordan', name: '迈克尔·乔丹', height: 198, width: 55, type: CharacterType.CELEBRITY, color: '#DC2626', isCustom: false },
+  
+  // 名人 - 动漫角色
+  { id: 'anime-conan', name: '江户川柯南', height: 120, width: 30, type: CharacterType.CELEBRITY, color: '#2563EB', isCustom: false },
+  { id: 'anime-luffy', name: '蒙奇·D·路飞', height: 174, width: 45, type: CharacterType.CELEBRITY, color: '#EF4444', isCustom: false },
+  
+  // 名人 - 神话人物
+  { id: 'myth-zeus', name: '宙斯', height: 250, width: 80, type: CharacterType.CELEBRITY, color: '#7C3AED', isCustom: false },
 
-  // 物体建筑
-  { id: '7', name: '埃菲尔铁塔', height: 32400, width: 12400, type: CharacterType.BUILDING, color: '#6B7280', isCustom: false },
-  { id: '8', name: '自由女神像', height: 4615, width: 1400, type: CharacterType.BUILDING, color: '#059669', isCustom: false },
+  // 物体 - 建筑物
+  { id: 'object-eiffel', name: '埃菲尔铁塔', height: 32400, width: 12400, type: CharacterType.OBJECT, color: '#6B7280', isCustom: false },
+  { id: 'object-liberty', name: '自由女神像', height: 4615, width: 1400, type: CharacterType.OBJECT, color: '#059669', isCustom: false },
+  { id: 'object-burj', name: '哈利法塔', height: 82800, width: 15000, type: CharacterType.OBJECT, color: '#1F2937', isCustom: false },
+  
+  // 物体 - 自然物体
+  { id: 'object-everest', name: '珠穆朗玛峰', height: 884800, width: 500000, type: CharacterType.OBJECT, color: '#374151', isCustom: false },
+  { id: 'object-earth', name: '地球', height: 1276700000, width: 1276700000, type: CharacterType.OBJECT, color: '#3B82F6', isCustom: false },
+  { id: 'object-sun', name: '太阳', height: 139200000000, width: 139200000000, type: CharacterType.OBJECT, color: '#F59E0B', isCustom: false },
 
-  // 动物
-  { id: '9', name: '长颈鹿', height: 550, width: 200, type: CharacterType.ANIMAL, color: '#D97706', isCustom: false },
-  { id: '10', name: '大象', height: 400, width: 600, type: CharacterType.ANIMAL, color: '#6B7280', isCustom: false },
+  // 生物 - 动物
+  { id: 'bio-giraffe', name: '长颈鹿', height: 550, width: 200, type: CharacterType.BIOLOGY, color: '#D97706', isCustom: false },
+  { id: 'bio-elephant', name: '大象', height: 400, width: 600, type: CharacterType.BIOLOGY, color: '#6B7280', isCustom: false },
+  { id: 'bio-whale', name: '蓝鲸', height: 3000, width: 2500, type: CharacterType.BIOLOGY, color: '#1E40AF', isCustom: false },
+  { id: 'bio-ant', name: '蚂蚁', height: 0.5, width: 0.3, type: CharacterType.BIOLOGY, color: '#7C2D12', isCustom: false },
+  
+  // 生物 - 植物
+  { id: 'bio-redwood', name: '红杉树', height: 11500, width: 800, type: CharacterType.BIOLOGY, color: '#059669', isCustom: false },
+  { id: 'bio-bamboo', name: '竹子', height: 3000, width: 50, type: CharacterType.BIOLOGY, color: '#16A34A', isCustom: false },
+  
+  // 生物 - 微生物
+  { id: 'bio-bacteria', name: '细菌', height: 0.0002, width: 0.0001, type: CharacterType.BIOLOGY, color: '#7C3AED', isCustom: false },
+  { id: 'bio-virus', name: '病毒', height: 0.00001, width: 0.00001, type: CharacterType.BIOLOGY, color: '#DC2626', isCustom: false },
+  
+  // 极小尺度 - 亚原子级别
+  { id: 'physics-atom', name: '氢原子', height: 0.0000001, width: 0.0000001, type: CharacterType.OBJECT, color: '#8B5CF6', isCustom: false },
+  { id: 'physics-proton', name: '质子', height: 0.000000001, width: 0.000000001, type: CharacterType.OBJECT, color: '#7C3AED', isCustom: false },
+  { id: 'physics-electron', name: '电子', height: 0.000000000001, width: 0.000000000001, type: CharacterType.OBJECT, color: '#6366F1', isCustom: false },
+  { id: 'physics-quark', name: '夸克', height: 0.0000000000001, width: 0.0000000000001, type: CharacterType.OBJECT, color: '#4F46E5', isCustom: false },
+  
+  // 极大尺度 - 天体级别
+  { id: 'space-moon', name: '月球', height: 347400000000, width: 347400000000, type: CharacterType.OBJECT, color: '#9CA3AF', isCustom: false },
+  { id: 'space-jupiter', name: '木星', height: 1428400000000, width: 1428400000000, type: CharacterType.OBJECT, color: '#F59E0B', isCustom: false },
+  { id: 'space-sirius', name: '天狼星', height: 235920000000000, width: 235920000000000, type: CharacterType.OBJECT, color: '#3B82F6', isCustom: false },
+  { id: 'space-betelgeuse', name: '参宿四', height: 118000000000000000, width: 118000000000000000, type: CharacterType.OBJECT, color: '#EF4444', isCustom: false },
+  { id: 'space-solar-system', name: '太阳系', height: 1196000000000000000, width: 1196000000000000000, type: CharacterType.OBJECT, color: '#6366F1', isCustom: false },
+  { id: 'space-light-year', name: '光年', height: 94607304725800000000, width: 94607304725800000000, type: CharacterType.OBJECT, color: '#8B5CF6', isCustom: false },
+  { id: 'space-milky-way', name: '银河系', height: 9460730472580000000000000, width: 9460730472580000000000000, type: CharacterType.OBJECT, color: '#A855F7', isCustom: false },
+  { id: 'space-observable-universe', name: '可观测宇宙', height: 8.7e+28, width: 8.7e+28, type: CharacterType.OBJECT, color: '#0F172A', isCustom: false },
 ];
 
-// 单位转换函数
+// 单位转换函数（保持向后兼容）
 const convertHeight = (cm: number, unit: Unit): string => {
   switch (unit) {
     case Unit.CM:
@@ -94,6 +300,40 @@ const convertHeight = (cm: number, unit: Unit): string => {
     default:
       return `${cm}cm`;
   }
+};
+
+// 新的智能高度转换函数
+const convertHeightSmart = (cm: number, preferMetric: boolean = true): string => {
+  const bestUnit = getBestUnit(cm, preferMetric);
+  const result = convertHeightPrecision(cm, bestUnit);
+  return `${result.formatted}${bestUnit}`;
+};
+
+// 智能英制单位显示函数：人身高级别用英尺英寸，英里级别用科学计数法
+const convertHeightSmartImperial = (cm: number): string => {
+  const bestUnit = getBestUnit(cm, false);
+  
+  // 如果是英里级别，使用科学计数法
+  if (bestUnit === UnitSystem.MILE) {
+    return convertHeightSmart(cm, false); // 使用现有的智能转换（包含科学计数法）
+  }
+  
+  // 如果是英寸或英尺级别（人身高范围），使用传统的英尺'英寸"格式
+  if (bestUnit === UnitSystem.INCH || bestUnit === UnitSystem.FOOT) {
+    const totalInches = cm / 2.54;
+    const feet = Math.floor(totalInches / 12);
+    const inches = totalInches % 12;
+    return `${feet}' ${inches.toFixed(1)}"`;
+  }
+  
+  // 其他情况使用智能转换
+  return convertHeightSmart(cm, false);
+};
+
+// 获取最大高度用于动态单位制选择
+const getMaxHeightInComparison = (items: ComparisonItem[]): number => {
+  if (items.length === 0) return 200; // 默认值
+  return Math.max(...items.map(item => item.character.height));
 };
 
 
@@ -138,7 +378,7 @@ const HeightCompareTool: React.FC = () => {
   const [selectedComparisonItemId, setSelectedComparisonItemId] = useState<string | null>(null);
   const [showRightPanel, setShowRightPanel] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<CharacterType | 'all'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<CharacterType | 'all'>(CharacterType.GENERIC);
   const [styleSettings, setStyleSettings] = useState<StyleSettings>({
     backgroundColor: '#ffffff',
     gridLines: true,
@@ -190,9 +430,16 @@ const HeightCompareTool: React.FC = () => {
     if (pixelsPerCmState !== 1) {
       return pixelsPerCmState;
     }
-    // 否则使用自动计算的值
-    const maxHeight = comparisonItems.length > 0 ? Math.max(...comparisonItems.map(item => item.character.height)) : 200;
-    return (chartAreaHeightPix - 70) / maxHeight;
+    // 否则使用自动计算的值，使用高精度计算
+    const maxHeight = getMaxHeightInComparison(comparisonItems);
+    const availableHeight = chartAreaHeightPix - 70;
+    
+    // 使用高精度计算避免极端情况下的精度损失
+    const heightPrecision = Precision.from(availableHeight);
+    const maxHeightPrecision = Precision.from(maxHeight);
+    const ratio = heightPrecision.divide(maxHeightPrecision);
+    
+    return ratio.toNumber();
   }, [chartAreaHeightPix, comparisonItems, pixelsPerCmState]);
 
   const handleZoom = useCallback((zoomDelta: number) => {
@@ -1084,7 +1331,7 @@ const HeightCompareTool: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-gray-600">
-                            {convertHeight(item.character.height, unit)}
+                            {convertHeightSmart(item.character.height, true)}
                           </span>
                           <button
                             title="拖拽调整位置"
@@ -1151,48 +1398,80 @@ const HeightCompareTool: React.FC = () => {
             {/* 角色分类tabs */}
             <div className="flex border-b border-gray-200">
               <button
-                onClick={() => setSelectedCategory('all')}
-                className={`flex-1 px-2 py-2 text-xs text-center border-r border-gray-200 ${selectedCategory === 'all'
-                  ? 'text-blue-600 border-b-2 border-b-blue-600 -mb-px'
-                  : 'text-gray-700 hover:text-gray-900'
+                onClick={() => setSelectedCategory(CharacterType.GENERIC)}
+                className={`flex-1 px-1 py-2 text-xs text-center border-r border-gray-200 ${selectedCategory === CharacterType.GENERIC
+                  ? 'text-blue-600 border-b-2 border-b-blue-600 -mb-px bg-blue-50'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
               >
-                通用角色
+                通用
               </button>
               <button
                 onClick={() => setSelectedCategory(CharacterType.CELEBRITY)}
-                className={`flex-1 px-2 py-2 text-xs text-center border-r border-gray-200 ${selectedCategory === CharacterType.CELEBRITY
-                  ? 'text-blue-600 border-b-2 border-b-blue-600 -mb-px'
-                  : 'text-gray-700 hover:text-gray-900'
+                className={`flex-1 px-1 py-2 text-xs text-center border-r border-gray-200 ${selectedCategory === CharacterType.CELEBRITY
+                  ? 'text-blue-600 border-b-2 border-b-blue-600 -mb-px bg-blue-50'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
               >
                 名人
               </button>
               <button
-                onClick={() => setSelectedCategory(CharacterType.BUILDING)}
-                className={`flex-1 px-2 py-2 text-xs text-center border-r border-gray-200 ${selectedCategory === CharacterType.BUILDING
-                  ? 'text-blue-600 border-b-2 border-b-blue-600 -mb-px'
-                  : 'text-gray-700 hover:text-gray-900'
+                onClick={() => setSelectedCategory(CharacterType.OBJECT)}
+                className={`flex-1 px-1 py-2 text-xs text-center border-r border-gray-200 ${selectedCategory === CharacterType.OBJECT
+                  ? 'text-blue-600 border-b-2 border-b-blue-600 -mb-px bg-blue-50'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
               >
                 物体
               </button>
               <button
-                onClick={() => setSelectedCategory(CharacterType.FICTIONAL)}
-                className={`flex-1 px-2 py-2 text-xs text-center ${selectedCategory === CharacterType.FICTIONAL
-                  ? 'text-blue-600 border-b-2 border-b-blue-600 -mb-px'
-                  : 'text-gray-700 hover:text-gray-900'
+                onClick={() => setSelectedCategory(CharacterType.BIOLOGY)}
+                className={`flex-1 px-1 py-2 text-xs text-center border-r border-gray-200 ${selectedCategory === CharacterType.BIOLOGY
+                  ? 'text-blue-600 border-b-2 border-b-blue-600 -mb-px bg-blue-50'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
               >
-                图片
+                生物
+              </button>
+              <button
+                onClick={() => setSelectedCategory(CharacterType.UPLOAD)}
+                className={`flex-1 px-1 py-2 text-xs text-center ${selectedCategory === CharacterType.UPLOAD
+                  ? 'text-blue-600 border-b-2 border-b-blue-600 -mb-px bg-blue-50'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+              >
+                上传
               </button>
             </div>
 
             {/* 角色网格 */}
             <div className="flex-1 overflow-y-auto p-4 thin-scrollbar relative">
               <div className="absolute inset-4">
-                <div className="grid grid-cols-3 gap-2">
-                  {filteredCharacters.map(character => (
+                {selectedCategory === CharacterType.UPLOAD ? (
+                  /* 上传图片界面 */
+                  <div className="flex flex-col items-center justify-center h-full">
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center w-full max-w-sm">
+                      <div className="text-4xl mb-4">📷</div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">上传图片</h3>
+                      <p className="text-sm text-gray-500 mb-4">
+                        支持 JPG、PNG、GIF 格式<br/>
+                        上传后可进行裁剪
+                      </p>
+                      <button 
+                        className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors"
+                        onClick={() => {
+                          // TODO: 实现图片上传功能
+                          alert('图片上传功能即将开发完成！');
+                        }}
+                      >
+                        选择图片
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* 预设角色网格 */
+                  <div className="grid grid-cols-3 gap-2">
+                    {filteredCharacters.map(character => (
                     <div
                       key={character.id}
                       data-character-item="true"
@@ -1210,13 +1489,34 @@ const HeightCompareTool: React.FC = () => {
                             backgroundColor: character.color
                           }}
                         >
-                          {character.type === CharacterType.GENERIC ? '○' :
-                            character.type === CharacterType.CELEBRITY ? '♂' :
-                              character.type === CharacterType.FICTIONAL ? '⚡' :
-                                character.type === CharacterType.OBJECT ? '🏠' :
-                                  character.type === CharacterType.BUILDING ? '🏛️' :
-                                    character.type === CharacterType.ANIMAL ? '🐘' :
-                                      character.type === CharacterType.PLANT ? '🌳' : '○'}
+                          {character.type === CharacterType.GENERIC ? (
+                            character.svgIcon ? (
+                              // 这里可以根据 svgIcon 显示不同的图标
+                              character.name.includes('男性') ? '👨' :
+                              character.name.includes('女性') ? '👩' :
+                              character.name.includes('中性') ? '🧑' :
+                              character.name.includes('儿童') ? '🧒' : '👤'
+                            ) : '👤'
+                          ) :
+                          character.type === CharacterType.CELEBRITY ? (
+                            character.name.includes('动漫') || character.name.includes('柯南') || character.name.includes('路飞') ? '👥' :
+                            character.name.includes('神话') || character.name.includes('宙斯') ? '⚡' : '⭐'
+                          ) :
+                          character.type === CharacterType.OBJECT ? (
+                            character.name.includes('塔') || character.name.includes('建筑') ? '🏗️' :
+                            character.name.includes('山') || character.name.includes('峰') ? '🏔️' :
+                            character.name.includes('地球') ? '🌍' :
+                            character.name.includes('太阳') ? '☀️' : '🏢'
+                          ) :
+                          character.type === CharacterType.BIOLOGY ? (
+                            character.name.includes('树') || character.name.includes('竹') ? '🌳' :
+                            character.name.includes('鲸') ? '🐋' :
+                            character.name.includes('长颈鹿') ? '🦒' :
+                            character.name.includes('大象') ? '🐘' :
+                            character.name.includes('蚂蚁') ? '🐜' :
+                            character.name.includes('细菌') || character.name.includes('病毒') ? '🦠' : '🐾'
+                          ) :
+                          character.type === CharacterType.UPLOAD ? '📷' : '○'}
                         </div>
                       </div>
 
@@ -1228,12 +1528,13 @@ const HeightCompareTool: React.FC = () => {
                         `}>
                         <div className="font-medium text-gray-900 text-center">{character.name}</div>
                         <div className="text-gray-600 text-[11px] text-center">
-                          {convertHeight(character.height, Unit.CM)} / {convertHeight(character.height, Unit.FT_IN)}
+                          {convertHeightSmart(character.height, true)} / {convertHeightSmartImperial(character.height)}
                         </div>
                       </div>
                     </div>
                   ))}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1253,7 +1554,7 @@ const HeightCompareTool: React.FC = () => {
                       {comparisonItems.length} 个对象
                     </div>
                     <div className="text-sm text-gray-600">
-                      pixelsPerCm: {pixelsPerCm.toFixed(2)}
+                      pixelsPerCm: {formatNumber(pixelsPerCm, 10)}
                     </div>
                     <div className="text-sm text-gray-600">
                       chartAreaHeightPix: {chartAreaHeightPix}
@@ -1343,47 +1644,59 @@ const HeightCompareTool: React.FC = () => {
                   </div>
 
                   {/* 网格线 */}
-                  {styleSettings.gridLines && (
-                    <div className="absolute inset-0 pointer-events-none">
-                      {/* 单位标签 */}
-                      <div className="absolute top-0 left-0 w-full">
-                        <span className="absolute left-4 -top-8 text-sm font-bold text-gray-700">
-                          cm
-                        </span>
-                        <span className="absolute right-4 -top-8 text-sm font-bold text-gray-700">
-                          ft
-                        </span>
+                  {styleSettings.gridLines && (() => {
+                    // 计算最大高度用于确定统一的单位制
+                    const maxHeightInComparison = getMaxHeightInComparison(comparisonItems);
+                    const unifiedMetricUnit = getBestUnit(maxHeightInComparison, true);
+                    const unifiedImperialUnit = getBestUnit(maxHeightInComparison, false);
+                    
+                    return (
+                      <div className="absolute inset-0 pointer-events-none">
+                        {/* 动态单位标签 */}
+                        <div className="absolute top-0 left-0 w-full">
+                          <span className="absolute left-4 -top-8 text-sm font-bold text-gray-700">
+                            公制 ({unifiedMetricUnit})
+                          </span>
+                          <span className="absolute right-4 -top-8 text-sm font-bold text-gray-700">
+                            英制 ({unifiedImperialUnit})
+                          </span>
+                        </div>
+
+                        {Array.from({ length: 21 }, (_, i) => {
+                          const heightPercentage = i / 20;
+                          const pixHeight = chartAreaHeightPix * heightPercentage;
+                          
+                          // 使用高精度计算
+                          const pixHeightPrecision = Precision.from(pixHeight);
+                          const pixelsPerCmPrecision = Precision.from(pixelsPerCm);
+                          const cmHeight = pixHeightPrecision.divide(pixelsPerCmPrecision).toNumber();
+                          
+                          // 使用统一的单位制进行转换
+                          const metricResult = convertHeightPrecision(cmHeight, unifiedMetricUnit);
+                          const imperialResult = convertHeightPrecision(cmHeight, unifiedImperialUnit);
+
+                          return (
+                            <div
+                              key={i}
+                              className="absolute left-0 w-full border-t border-gray-300"
+                              style={{ bottom: `${heightPercentage * 100}%` }}
+                            >
+                              {styleSettings.labels && (
+                                <>
+                                  <span className="absolute left-2 -top-2 text-xs text-gray-600">
+                                    {metricResult.formatted}
+                                  </span>
+                                  <span className="absolute right-2 -top-2 text-xs text-gray-600">
+                                    {imperialResult.formatted}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-
-                      {Array.from({ length: 21 }, (_, i) => {
-                        const heightPercentage = i / 20;
-                        const pixHeight = chartAreaHeightPix * heightPercentage;
-                        const cmHeight = Math.round(pixHeight / pixelsPerCm);
-                        const inchHeight = cmHeight / 2.54;
-                        const feet = Math.floor(inchHeight / 12);
-                        const inches = (inchHeight % 12).toFixed(1);
-
-                        return (
-                          <div
-                            key={i}
-                            className="absolute left-0 w-full border-t border-gray-300"
-                            style={{ bottom: `${heightPercentage * 100}%` }}
-                          >
-                            {styleSettings.labels && (
-                              <>
-                                <span className="absolute left-2 -top-2 text-xs text-gray-600">
-                                  {cmHeight}cm
-                                </span>
-                                <span className="absolute right-2 -top-2 text-xs text-gray-600">
-                                  {feet}' {inches}"
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* 角色展示 */}
                   <div className="relative w-full h-full p-0 m-0">

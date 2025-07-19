@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CharacterType, type Character, Unit, convertHeight } from "./HeightCompareTool";
+import { CharacterType, type Character, Unit, convertHeight, convertHeightSmart, convertHeightSmartImperial, getBestUnit, UnitSystem, UNIT_CONVERSIONS } from "./HeightCompareTool";
 import {
     Trash2, Edit3, Move
 } from 'lucide-react';
@@ -39,13 +39,13 @@ const CharacterDisplay: React.FC<{
     const [hovered, setHovered] = useState(false);
 
 
-    // 获取当前单位的高度显示
+    // 获取当前单位的高度显示 - 使用智能单位制
     const getHeightDisplay = (unit: Unit) => {
         switch (unit) {
             case Unit.CM:
-                return `cm: ${character.height}`;
+                return convertHeightSmart(character.height, true); // 公制智能单位
             case Unit.FT_IN:
-                return `ft: ${convertHeight(character.height, Unit.FT_IN)}`;
+                return convertHeightSmartImperial(character.height); // 英制智能单位
         }
     };
 

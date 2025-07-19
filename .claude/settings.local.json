@@ -4,7 +4,10 @@
       "Bash(pnpm dev:*)",
       "Bash(npx pnpm dev:*)",
       "Bash(npm run dev:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(node:*)",
+      "Bash(rm:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }
