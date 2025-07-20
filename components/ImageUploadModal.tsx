@@ -22,7 +22,7 @@ interface ImageUploadModalProps {
   }) => void;
 }
 
-// 从裁剪区域获取裁剪后的图片
+// Get cropped image from crop area
 const getCroppedImg = async (
   image: HTMLImageElement,
   crop: CropArea,
@@ -73,19 +73,19 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  // 处理文件选择
+  // Handle file selection
   const handleFileSelect = useCallback((file: File) => {
     if (file.type.startsWith('image/')) {
       setSelectedFile(file);
       const url = URL.createObjectURL(file);
       setImageUrl(url);
-      // 重置状态
+      // Reset state
       setCrop(undefined);
       setScale(1);
     }
   }, []);
 
-  // 图片加载完成，设置初始裁剪区域
+  // Image loaded, set initial crop area
   const onImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     const { width, height } = e.currentTarget;
     const crop = centerCrop(
@@ -104,17 +104,17 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
     setCrop(crop);
   }, []);
 
-  // 单位转换到米
+  // Convert units to meters
   const convertToMeters = (value: number, unit: UnitSystem): number => {
     return value / UNIT_CONVERSIONS[unit];
   };
 
-  // 处理保存
+  // Handle save
   const handleSave = useCallback(async () => {
     if (!selectedFile || !imageUrl || !crop || !imgRef.current) return;
 
     try {
-      // 转换为像素裁剪区域
+      // Convert to pixel crop area
       const image = imgRef.current;
       const cropPixels: CropArea = {
         x: (crop.x / 100) * image.width,
@@ -123,10 +123,10 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
         height: (crop.height / 100) * image.height,
       };
 
-      // 生成裁剪后的图片
+      // Generate cropped image
       const croppedImageUrl = await getCroppedImg(image, cropPixels, scale);
 
-      // 计算尺寸
+      // Calculate dimensions
       const heightInM = convertToMeters(parseFloat(height), heightUnit);
       const widthInM = width ? convertToMeters(parseFloat(width), widthUnit) : undefined;
       const aspectRatio = cropPixels.width / cropPixels.height;
@@ -138,7 +138,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
         aspectRatio
       });
 
-      // 重置状态
+      // Reset state
       setSelectedFile(null);
       setImageUrl('');
       setHeight('1.8');
@@ -148,11 +148,11 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
 
     } catch (error) {
       console.error('Error cropping image:', error);
-      alert('图片裁剪失败，请重试');
+      alert('Image cropping failed, please try again');
     }
   }, [selectedFile, imageUrl, crop, scale, height, width, heightUnit, widthUnit, onSave]);
 
-  // 处理拖拽上传
+  // Handle drag upload
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
   }, []);
@@ -165,9 +165,9 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
     }
   }, [handleFileSelect]);
 
-  // 处理关闭
+  // Handle close
   const handleClose = useCallback(() => {
-    // 清理URL对象
+    // Clean up URL objects
     if (imageUrl) {
       URL.revokeObjectURL(imageUrl);
     }
@@ -188,9 +188,9 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full h-full max-w-6xl max-h-[95vh] flex flex-col overflow-hidden">
-        {/* 头部 */}
+        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
-          <h2 className="text-xl font-semibold">上传图片</h2>
+          <h2 className="text-xl font-semibold">Upload Image</h2>
           <button
             onClick={handleClose}
             className="p-2 hover:bg-gray-100 rounded-full"
@@ -200,7 +200,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
         </div>
 
         <div className="p-4 flex gap-6 flex-1">
-          {/* 左侧：图片裁剪区域 */}
+          {/* Left: Image crop area */}
           <div className="flex-1 flex flex-col">
             {!imageUrl ? (
               <div
@@ -210,8 +210,8 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Upload size={48} className="text-gray-400 mb-4" />
-                <p className="text-gray-600 text-lg mb-2">点击或拖拽上传图片</p>
-                <p className="text-gray-400 text-sm">支持 JPG、PNG、GIF 格式</p>
+                <p className="text-gray-600 text-lg mb-2">Click or drag to upload image</p>
+                <p className="text-gray-400 text-sm">Supports JPG, PNG, GIF formats</p>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -226,12 +226,12 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
               </div>
             ) : (
               <div className="flex-1 flex flex-col min-h-0">
-                {/* 图片裁剪区域 */}
+                {/* Image crop area */}
                 <div className="flex-1 bg-gray-100 rounded-lg overflow-hidden min-h-0 flex items-center justify-center">
                   <ReactCrop
                     crop={crop}
                     onChange={(_, percentCrop) => setCrop(percentCrop)}
-                    aspect={undefined} // 允许自由比例
+                    aspect={undefined} // Allow free aspect ratio
                     style={{
                       maxWidth: '100%',
                       maxHeight: '100%',
@@ -255,11 +255,11 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
                   </ReactCrop>
                 </div>
 
-                {/* 缩放控制 */}
+                {/* Scale control */}
                 <div className="mt-4 bg-white rounded-lg p-3 border flex-shrink-0">
                   <div className="flex items-center gap-3">
                     <ZoomOut size={16} className="text-gray-600" />
-                    <span className="text-sm text-gray-600 whitespace-nowrap">缩放:</span>
+                    <span className="text-sm text-gray-600 whitespace-nowrap">Scale:</span>
                     <input
                       type="range"
                       min="0.1"
@@ -277,14 +277,14 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
             )}
           </div>
 
-          {/* 右侧：设置面板 */}
+          {/* Right: Settings panel */}
           <div className="w-80 border-l pl-6 flex flex-col">
             <div className="flex-1">
-              <h3 className="font-semibold mb-4">尺寸设置</h3>
+              <h3 className="font-semibold mb-4">Size Settings</h3>
 
-              {/* 高度设置 */}
+              {/* Height settings */}
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">高度 *</label>
+                <label className="block text-sm font-medium mb-2">Height *</label>
                 <div className="flex gap-2">
                   <input
                     type="number"
@@ -312,9 +312,9 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
                 </div>
               </div>
 
-              {/* 宽度设置 */}
+              {/* Width settings */}
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">宽度（可选）</label>
+                <label className="block text-sm font-medium mb-2">Width (optional)</label>
                 <div className="flex gap-2">
                   <input
                     type="number"
@@ -323,7 +323,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
                     className="flex-1 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     step="0.01"
                     min="0"
-                    placeholder="自动计算"
+                    placeholder="Auto calculate"
                   />
                   <select
                     value={widthUnit}
@@ -343,27 +343,27 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
                   </select>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  如果不设置宽度，将根据裁剪后图片的宽高比自动计算
+                  If width is not set, it will be automatically calculated based on the aspect ratio of the cropped image
                 </p>
               </div>
 
-              {/* 裁剪说明 */}
+              {/* Crop instructions */}
               {imageUrl && (
                 <div className="mb-4 p-4 bg-blue-50 rounded-md">
                   <h4 className="font-medium text-blue-900 mb-2 flex items-center">
                     <Crop size={16} className="mr-2" />
-                    操作说明
+                    Instructions
                   </h4>
                   <ul className="text-sm text-blue-700 space-y-1">
-                    <li>• 拖拽裁剪框移动位置</li>
-                    <li>• 拖拽裁剪框角落调整大小</li>
-                    <li>• 使用滑块缩放图片 (10%-300%)</li>
-                    <li>• 图片固定，只需调整裁剪框</li>
+                    <li>• Drag crop box to move position</li>
+                    <li>• Drag crop box corners to resize</li>
+                    <li>• Use slider to scale image (10%-300%)</li>
+                    <li>• Image is fixed, just adjust crop box</li>
                   </ul>
                 </div>
               )}
 
-              {/* 重新选择图片 */}
+              {/* Reselect image */}
               {imageUrl && (
                 <div className="mb-4">
                   <button
@@ -378,19 +378,19 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
                     }}
                     className="w-full px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors text-sm"
                   >
-                    重新选择图片
+                    Reselect Image
                   </button>
                 </div>
               )}
             </div>
 
-            {/* 底部按钮 */}
+            {/* Bottom buttons */}
             <div className="flex gap-3 pt-4 border-t">
               <button
                 onClick={handleClose}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
               >
-                取消
+                Cancel
               </button>
               <button
                 onClick={handleSave}
@@ -398,7 +398,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
                 className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
               >
                 <Check size={16} className="mr-2" />
-                保存
+                Save
               </button>
             </div>
           </div>

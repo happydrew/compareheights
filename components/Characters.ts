@@ -9,14 +9,13 @@ enum CharacterType {
   UPLOAD = 'upload'       // 上传图片
 }
 
-// 角色接口 - 扁平化结构，对应数据库表字段
+// 角色接口 - 完全匹配数据库表字段结构
 interface Character {
   id: string;
   name: string;
   height: number; // 以m为单位
-  // 不定义角色的宽度了，以角色的图片的实际宽高比为角色的宽高比，这样收集整理角色数据时，就不用再额外收集或者计算角色的宽度
-  // width: number; // 以m为单位
   type: CharacterType;
+  description?: string;
 
   // 媒体相关字段
   mediaType: 'svg' | 'image'; // 媒体类型
@@ -29,181 +28,198 @@ interface Character {
   colorCustomizable: boolean; // 是否支持自定义颜色
   colorProperty?: string; // SVG中需要修改颜色的属性名（如'fill', 'stroke'）
 
-  isCustom: boolean;
-  description?: string;
+  // 状态字段
+  isCustom: boolean; // 是否为自定义角色
+  isActive: boolean; // 是否激活状态
   isUploadedImage?: boolean; // 是否为用户上传的图片
+
+  // 时间戳字段
+  createdAt?: string; // 创建时间
+  updatedAt?: string; // 更新时间
 }
 
 // 预设角色数据（基于米） - 使用新的数据结构
 const PRESET_CHARACTERS: Character[] = [
-  // 通用角色 - 男性 (SVG)
+  // Generic character - Male (SVG)
   {
     id: 'generic-male-1',
-    name: '男性1',
+    name: 'Male 1',
     height: 1.75,
-    //width: 0.5,
     type: CharacterType.GENERIC,
-    // 媒体相关字段 - 扁平化
+    description: 'Generic male character',
+    // 媒体相关字段
     mediaType: 'svg',
     mediaUrl: '/assets/svg/man1.svg',
     thumbnailUrl: '/assets/svg/man1.svg',
     svgContent: null,
-    // 外观相关字段 - 扁平化
-    //color: '#3B82F6',
+    // 外观相关字段
+    color: '#3B82F6',
     colorCustomizable: false,
-    colorProperty: 'fill', // 可设置多个属性用逗号分隔，如 'fill,stroke'
-    isCustom: false
+    colorProperty: 'fill',
+    // 状态字段
+    isCustom: false,
+    isActive: true
   },
 
-  // 通用角色 - 女性 (SVG)
+  // Generic character - Female (SVG)
   {
     id: 'generic-female-1',
-    name: '女性1',
+    name: 'Female 1',
     height: 1.65,
-    //width: 0.45,
     type: CharacterType.GENERIC,
-    // 媒体相关字段 - 扁平化
+    description: 'Generic female character',
+    // 媒体相关字段
     mediaType: 'svg',
     mediaUrl: '/assets/svg/woman1.svg',
     thumbnailUrl: '/assets/svg/woman1.svg',
     svgContent: null,
-    // 外观相关字段 - 扁平化
-    //color: '#EC4899',
-    colorCustomizable: true,
+    // 外观相关字段
+    color: '#EC4899',
+    colorCustomizable: false,
     colorProperty: 'fill',
-    isCustom: false
+    // 状态字段
+    isCustom: false,
+    isActive: true
   },
 
-  // 名人 - 马斯克 (图片)
+  // Celebrity - Musk (Image)
   {
     id: 'celebrity-musk',
-    name: '埃隆·马斯克',
+    name: 'Elon Musk',
     height: 1.88,
-    //width: 0.52,
     type: CharacterType.CELEBRITY,
-    // 媒体相关字段 - 扁平化
+    description: 'CEO of Tesla and SpaceX',
+    // 媒体相关字段
     mediaType: 'image',
     mediaUrl: '/assets/images/original-3.webp',
     thumbnailUrl: '/assets/images/original-3.webp',
-    // 外观相关字段 - 扁平化
+    // 外观相关字段
     color: '#1F2937',
     colorCustomizable: false,
+    // 状态字段
     isCustom: false,
-    description: '特斯拉和SpaceX CEO'
+    isActive: true
   },
 
-  // 名人 - 比尔·盖茨 (图片)
+  // Celebrity - Bill Gates (Image)
   {
     id: 'celebrity-gates',
-    name: '比尔·盖茨',
+    name: 'Bill Gates',
     height: 1.77,
-    //width: 0.50,
     type: CharacterType.CELEBRITY,
-    // 媒体相关字段 - 扁平化
+    description: 'Co-founder of Microsoft',
+    // 媒体相关字段
     mediaType: 'image',
     mediaUrl: '/assets/images/original-4.webp',
     thumbnailUrl: '/assets/images/original-4.webp',
-    // 外观相关字段 - 扁平化
+    // 外观相关字段
     color: '#374151',
     colorCustomizable: false,
+    // 状态字段
     isCustom: false,
-    description: '微软联合创始人'
+    isActive: true
   },
 
-  // 名人 - C罗 (图片)
+  // Celebrity - Cristiano Ronaldo (Image)
   {
     id: 'celebrity-ronaldo',
-    name: 'C罗',
+    name: 'Cristiano Ronaldo',
     height: 1.87,
-    //width: 0.54,
     type: CharacterType.CELEBRITY,
-    // 媒体相关字段 - 扁平化
+    description: 'Portuguese football player',
+    // 媒体相关字段
     mediaType: 'image',
     mediaUrl: '/assets/images/original-1.webp',
     thumbnailUrl: '/assets/images/original-1.webp',
-    // 外观相关字段 - 扁平化
+    // 外观相关字段
     color: '#EF4444',
     colorCustomizable: false,
+    // 状态字段
     isCustom: false,
-    description: '葡萄牙足球运动员'
+    isActive: true
   },
 
-  // 通用角色 - 儿童 (SVG)
+  // Generic character - Child (SVG)
   {
     id: 'generic-child-1',
-    name: '儿童1',
+    name: 'Child 1',
     height: 1.2,
-    //width: 0.35,
     type: CharacterType.GENERIC,
-    // 媒体相关字段 - 扁平化
+    description: 'Generic child character',
+    // 媒体相关字段
     mediaType: 'svg',
     mediaUrl: '/assets/svg/boy1.svg',
     thumbnailUrl: '/assets/svg/boy1.svg',
     svgContent: null,
-    // 外观相关字段 - 扁平化
-    //color: '#F59E0B',
-    colorCustomizable: true,
+    // 外观相关字段
+    color: '#F59E0B',
+    colorCustomizable: false,
     colorProperty: 'fill',
-    isCustom: false
+    // 状态字段
+    isCustom: false,
+    isActive: true
   },
 
-  // 名人 - 姚明
+  // Celebrity - Yao Ming
   {
     id: 'celebrity-yaoming',
-    name: '姚明',
+    name: 'Yao Ming',
     height: 2.26,
-    //width: 0.6,
     type: CharacterType.CELEBRITY,
-    // 媒体相关字段 - 扁平化
+    description: 'Chinese basketball player',
+    // 媒体相关字段
     mediaType: 'image',
     mediaUrl: '/assets/images/original-2.webp',
     thumbnailUrl: '/assets/images/original-2.webp',
-    // 外观相关字段 - 扁平化
+    // 外观相关字段
     color: '#8B5CF6',
     colorCustomizable: false,
+    // 状态字段
     isCustom: false,
-    description: '中国篮球运动员'
+    isActive: true
   },
 
-  // 物体 - 埃菲尔铁塔
+  // Object - Eiffel Tower
   {
     id: 'object-eiffel',
-    name: '埃菲尔铁塔',
+    name: 'Eiffel Tower',
     height: 324,
-    //width: 124,
     type: CharacterType.OBJECT,
-    // 媒体相关字段 - 扁平化
+    description: 'Famous landmark in Paris, France',
+    // 媒体相关字段
     mediaType: 'svg',
     mediaUrl: '/assets/svg/eiffel-tower.svg',
     thumbnailUrl: '/assets/svg/eiffel-tower.svg',
     svgContent: null,
-    // 外观相关字段 - 扁平化
+    // 外观相关字段
     color: '#6B7280',
     colorCustomizable: true,
     colorProperty: 'fill',
+    // 状态字段
     isCustom: false,
-    description: '法国巴黎著名地标'
+    isActive: true
   },
 
-  // 生物 - 长颈鹿
+  // Biology - Giraffe
   {
     id: 'bio-giraffe',
-    name: '长颈鹿',
+    name: 'Giraffe',
     height: 5.5,
-    //width: 2,
     type: CharacterType.BIOLOGY,
-    // 媒体相关字段 - 扁平化
+    description: 'World\'s tallest land animal',
+    // 媒体相关字段
     mediaType: 'svg',
     mediaUrl: '/assets/svg/giraffe.svg',
     thumbnailUrl: '/assets/svg/giraffe.svg',
     svgContent: null,
-    // 外观相关字段 - 扁平化
+    // 外观相关字段
     color: '#D97706',
     colorCustomizable: true,
     colorProperty: 'fill',
+    // 状态字段
     isCustom: false,
-    description: '世界上最高的陆地动物'
+    isActive: true
   }
 
-  // 注意：其他旧格式角色数据已迁移，仅保留上述测试角色
+  // Note: Other old format character data has been migrated, only the above test characters are retained
 ];

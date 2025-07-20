@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { Unit, convertHeightSmart, convertHeightSmartImperial } from './HeightCalculates';
 
-// SVG缓存管理器 - 用于缓存获取的SVG内容
+// SVG Cache Manager - for caching fetched SVG content
 class SVGCacheManager {
     private cache = new Map<string, string>();
     private loadingPromises = new Map<string, Promise<string>>();
@@ -50,28 +50,28 @@ class SVGCacheManager {
     }
 }
 
-// 全局SVG缓存实例
+// Global SVG cache instance
 const svgCache = new SVGCacheManager();
 
-// SVG颜色处理函数 - 支持多种颜色属性和更智能的替换
+// SVG color processing function - supports multiple color attributes and smarter replacement
 const processSVGColor = (svgContent: string, color?: string, colorProperty: string = 'fill'): string => {
     if (!color) return svgContent;
 
     let processedContent = svgContent;
 
-    // 支持多个颜色属性，使用逗号分隔
+    // Support multiple color attributes, separated by commas
     const properties = colorProperty.split(',').map(prop => prop.trim());
 
     properties.forEach(prop => {
-        // 精确匹配属性并替换值
+        // Precisely match attributes and replace values
         const regex = new RegExp(`\\b${prop}\\s*=\\s*"[^"]*"`, 'g');
         processedContent = processedContent.replace(regex, `${prop}="${color}"`);
 
-        // 也处理单引号的情况
+        // Also handle single quote cases
         const regexSingleQuote = new RegExp(`\\b${prop}\\s*=\\s*'[^']*'`, 'g');
         processedContent = processedContent.replace(regexSingleQuote, `${prop}='${color}'`);
 
-        // 处理style属性中的内联样式
+        // Handle inline styles in style attributes
         if (prop === 'fill' || prop === 'stroke') {
             const styleRegex = new RegExp(`\\bstyle\\s*=\\s*"([^"]*\\b${prop}\\s*:\\s*)[^;"]*(;?[^"]*)"`, 'g');
             processedContent = processedContent.replace(styleRegex, `style="$1${color}$2"`);
@@ -84,7 +84,7 @@ const processSVGColor = (svgContent: string, color?: string, colorProperty: stri
     return processedContent;
 };
 
-// SVG内联渲染组件
+// SVG inline rendering component
 const InlineSVGRenderer: React.FC<{
     svgContent: string;
     color?: string;
@@ -95,17 +95,17 @@ const InlineSVGRenderer: React.FC<{
     const processedSVG = useMemo(() => {
         let processedContent = processSVGColor(svgContent, color, colorProperty);
 
-        // 确保SVG能够填充满父容器
-        // 移除固定的width和height属性，添加响应式属性
+        // Ensure SVG can fill the parent container
+        // Remove fixed width and height attributes, add responsive attributes
         processedContent = processedContent.replace(
             /<svg([^>]*?)>/i,
             (match, attributes) => {
-                // 移除width和height属性
+                // Remove width and height attributes
                 let newAttributes = attributes
                     .replace(/\s+width\s*=\s*["'][^"']*["']/gi, '')
                     .replace(/\s+height\s*=\s*["'][^"']*["']/gi, '');
 
-                // 确保有viewBox属性，如果没有则尝试从width/height推导
+                // Ensure viewBox attribute exists, if not try to derive from width/height
                 if (!newAttributes.includes('viewBox')) {
                     const widthMatch = attributes.match(/width\s*=\s*["']([^"']*)["']/i);
                     const heightMatch = attributes.match(/height\s*=\s*["']([^"']*)["']/i);
@@ -118,7 +118,7 @@ const InlineSVGRenderer: React.FC<{
                     }
                 }
 
-                // 添加响应式属性
+                // Add responsive attributes
                 newAttributes += ' width="100%" height="100%" preserveAspectRatio="none"';
 
                 return `<svg${newAttributes}>`;
@@ -137,7 +137,7 @@ const InlineSVGRenderer: React.FC<{
     );
 };
 
-// 角色图片渲染组件 - 强制填充容器，包含SVG内联处理
+// Character image rendering component - force fill container, includes SVG inline processing
 const CharacterImageRenderer: React.FC<{
     character: Character;
     customColor?: string;
@@ -157,7 +157,7 @@ const CharacterImageRenderer: React.FC<{
 
         const finalColor = customColor || character.color;
 
-        // 处理SVG内联
+        // Handle SVG inlining
         useEffect(() => {
             if (character.mediaType === 'svg' && character.mediaUrl && !character.svgContent) {
                 setIsLoading(true);
@@ -195,33 +195,33 @@ const CharacterImageRenderer: React.FC<{
             }
         }, [character.mediaUrl, character.mediaType, character.svgContent, onLoad, onError]);
 
-        // 获取要使用的SVG内容
+        // Get SVG content to use
         const svgContentToUse = character.svgContent || inlinedSvgContent;
 
         return (
             <div className={`w-full h-full relative ${className}`}>
-                {/* 加载状态 */}
+                {/* Loading state */}
                 {isLoading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded">
                         <div className="w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
                     </div>
                 )}
 
-                {/* 错误状态 */}
+                {/* Error state */}
                 {hasError && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded">
                         <div className="text-gray-500 text-xs text-center p-2">
-                            加载失败<br />
+                            Load failed<br />
                             {character.name}
                         </div>
                     </div>
                 )}
 
-                {/* 图片内容 - 强制填充容器 */}
+                {/* Image content - force fill container */}
                 {!isLoading && !hasError && (
                     character.mediaType === 'svg' ? (
                         svgContentToUse ? (
-                            // 使用内联SVG内容 - 性能更佳
+                            // Use inline SVG content - better performance
                             <InlineSVGRenderer
                                 svgContent={svgContentToUse}
                                 color={character.colorCustomizable ? finalColor : undefined}
@@ -229,7 +229,7 @@ const CharacterImageRenderer: React.FC<{
                                 className="w-full h-full"
                             />
                         ) : (
-                            // 回退到直接使用SVG URL
+                            // Fallback to direct SVG URL
                             <img
                                 src={character.mediaUrl}
                                 alt={character.name}
@@ -260,10 +260,10 @@ const CharacterImageRenderer: React.FC<{
         );
     };
 
-// 获取SVG viewBox尺寸的工具函数
+// Utility function to get SVG viewBox dimensions
 const getSVGDimensions = (svgContent: string): { width: number; height: number } | null => {
     try {
-        // 尝试从viewBox获取尺寸
+        // Try to get dimensions from viewBox
         const viewBoxMatch = svgContent.match(/viewBox\s*=\s*["']([^"']*)["']/i);
         if (viewBoxMatch) {
             const viewBoxValues = viewBoxMatch[1].split(/[\s,]+/).map(Number);
@@ -275,7 +275,7 @@ const getSVGDimensions = (svgContent: string): { width: number; height: number }
             }
         }
 
-        // 如果viewBox不可用，尝试从width和height属性获取
+        // If viewBox is not available, try to get from width and height attributes
         const widthMatch = svgContent.match(/width\s*=\s*["']([^"']*)["']/i);
         const heightMatch = svgContent.match(/height\s*=\s*["']([^"']*)["']/i);
 
@@ -296,7 +296,7 @@ const getSVGDimensions = (svgContent: string): { width: number; height: number }
 
 const DEFAUL_ASPECT: number = 1 / 3
 
-// 角色展示组件
+// Character display component
 const CharacterDisplay: React.FC<{
     character: Character;
     pixelsPerM: number;
@@ -307,11 +307,11 @@ const CharacterDisplay: React.FC<{
     onMove?: (e: React.MouseEvent<Element> | React.TouchEvent<Element>) => void;
     onDelete?: () => void;
 }> = ({ character, pixelsPerM, isSelected, unit, isDragging = false, onEdit, onMove, onDelete }) => {
-    // 真实媒体宽高比状态
+    // Actual media aspect ratio state
     const [actualAspectRatio, setActualAspectRatio] = useState<number | null>(null);
     const [isLoadingAspectRatio, setIsLoadingAspectRatio] = useState(false);
 
-    // 获取媒体资源的真实宽高比
+    // Get the actual aspect ratio of media resources
     useEffect(() => {
         const loadAspectRatio = async () => {
             if (!character.mediaUrl) return;
@@ -320,7 +320,7 @@ const CharacterDisplay: React.FC<{
 
             try {
                 if (character.mediaType === 'svg') {
-                    // 处理SVG - 优先使用已有的svgContent，否则拉取
+                    // Handle SVG - prioritize existing svgContent, otherwise fetch
                     let svgContent = character.svgContent;
                     if (!svgContent) {
                         const response = await fetch(character.mediaUrl);
@@ -334,27 +334,27 @@ const CharacterDisplay: React.FC<{
                     if (dimensions) {
                         setActualAspectRatio(dimensions.width / dimensions.height);
                     } else {
-                        // 如果无法获取SVG尺寸，回退到默认宽高比
+                        // If unable to get SVG dimensions, fallback to default aspect ratio
                         setActualAspectRatio(DEFAUL_ASPECT);
                     }
                 } else if (character.mediaType === 'image') {
-                    // 处理图片
+                    // Handle images
                     const img = new Image();
                     img.onload = () => {
                         setActualAspectRatio(img.naturalWidth / img.naturalHeight);
                         setIsLoadingAspectRatio(false);
                     };
                     img.onerror = () => {
-                        // 图片加载失败，回退到默认宽高比
+                        // Image load failed, fallback to default aspect ratio
                         setActualAspectRatio(DEFAUL_ASPECT);
                         setIsLoadingAspectRatio(false);
                     };
                     img.src = character.mediaUrl;
-                    return; // 异步加载，不在这里设置loading状态
+                    return; // Async loading, don't set loading state here
                 }
             } catch (error) {
                 console.warn('Failed to load media aspect ratio:', error);
-                // 出错时回退到角色定义的宽高比
+                // Fallback to character-defined aspect ratio on error
                 setActualAspectRatio(DEFAUL_ASPECT);
             } finally {
                 setIsLoadingAspectRatio(false);
@@ -364,34 +364,34 @@ const CharacterDisplay: React.FC<{
         loadAspectRatio();
     }, [character.mediaUrl, character.mediaType, character.svgContent, character.height]);
 
-    // 计算显示尺寸 - 使用真实宽高比或回退到角色定义的比例
+    // Calculate display dimensions - use actual aspect ratio or fallback to character-defined ratio
     const displayHeight = character.height * pixelsPerM;
     const displayWidth = displayHeight * (actualAspectRatio != null ? actualAspectRatio : DEFAUL_ASPECT);
 
-    // 根据显示高度动态计算字体大小
-    const baseFontSize = 12;  // 基准字体大小
-    const minFontSize = 8;   // 最小字体大小
-    const hoverFontSize = 13; // 悬浮时的固定字体大小
+    // Dynamically calculate font size based on display height
+    const baseFontSize = 12;  // Base font size
+    const minFontSize = 8;   // Minimum font size
+    const hoverFontSize = 13; // Fixed font size on hover
 
-    // 当显示高度小于100px时，字体开始缩小
+    // Font starts to shrink when display height is less than 100px
     const fontSizeRatio = Math.min(1, displayHeight / 100);
     const normalFontSize = Math.max(
         minFontSize,
         baseFontSize * fontSizeRatio
     );
 
-    const hoverScale = hoverFontSize / normalFontSize; // 计算需要的缩放比例
+    const hoverScale = hoverFontSize / normalFontSize; // Calculate required scale ratio
 
     const buttonHoverSize = 16;
     const buttonNormalSize = buttonHoverSize / hoverScale;
 
-    // 获取当前单位的高度显示 - 使用智能单位制
+    // Get height display for current unit - use smart unit system
     const getHeightDisplay = (unit: Unit) => {
         switch (unit) {
             case Unit.CM:
-                return convertHeightSmart(character.height, true); // 公制智能单位
+                return convertHeightSmart(character.height, true); // Metric smart units
             case Unit.FT_IN:
-                return convertHeightSmartImperial(character.height); // 英制智能单位
+                return convertHeightSmartImperial(character.height); // Imperial smart units
         }
     };
 
@@ -402,7 +402,7 @@ const CharacterDisplay: React.FC<{
                 height: `${displayHeight}px`,
                 width: `${displayWidth}px`,
             }}
-            title="拖拽移动角色位置"
+            title="Drag to move character position"
             onMouseDown={(e) => {
                 e.stopPropagation();
                 onMove?.(e);
@@ -412,7 +412,7 @@ const CharacterDisplay: React.FC<{
                 onMove?.(e);
             }}
         >
-            {/* 头顶信息卡片容器 - 使用portal确保不被overflow影响 */}
+            {/* Top info card container - use portal to avoid overflow interference */}
             <div className="absolute inset-0 overflow-visible pointer-events-none">
                 <div
                     className={`absolute group-hover:opacity-100 group-hover:!z-[1001] bottom-full left-1/2 
@@ -427,7 +427,7 @@ const CharacterDisplay: React.FC<{
                         width: `${64 / hoverScale}px`,
                     } as React.CSSProperties}
                 >
-                    {/* 操作按钮组 */}
+                    {/* Action button group */}
                     <div
                         className={`flex items-center justify-around invisible group-hover:visible ${isDragging ? 'visible' : ''}`}
                         style={{
@@ -450,7 +450,7 @@ const CharacterDisplay: React.FC<{
                                 e.stopPropagation();
                             }}
                             className="rounded-full bg-white text-gray-600 hover:text-blue-600 hover:bg-blue-50 transition-colors shadow-sm"
-                            title="编辑角色"
+                            title="Edit character"
                             disabled={isDragging}
                             style={{
                                 padding: `${4 / hoverScale}px`,
@@ -487,7 +487,7 @@ const CharacterDisplay: React.FC<{
                                 e.stopPropagation();
                             }}
                             className="p-1 rounded-full bg-white text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors shadow-sm"
-                            title="删除角色"
+                            title="Remove character"
                             disabled={isDragging}
                         >
                             <Trash2 width={buttonNormalSize} height={buttonNormalSize} />
@@ -498,7 +498,7 @@ const CharacterDisplay: React.FC<{
                     >
                         {character.name}
                     </div>
-                    {/* 正常状态只显示当前单位 */}
+                    {/* Normal state only shows current unit */}
                     <div className={`w-full flex items-center justify-center font-medium`}
                         title={getHeightDisplay(unit)}
                     >
@@ -507,9 +507,9 @@ const CharacterDisplay: React.FC<{
                 </div>
             </div>
 
-            {/* 内部容器 - 完全贴合内容 */}
+            {/* Inner container - fully fitted content */}
             <div className="w-full h-full flex items-center justify-center relative z-10">
-                {/* 宽高比加载状态 */}
+                {/* Aspect ratio loading state */}
                 {isLoadingAspectRatio && (
                     <div className="absolute inset-0 bg-gray-100 bg-opacity-75 flex items-center justify-center rounded z-20">
                         <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -522,7 +522,7 @@ const CharacterDisplay: React.FC<{
                         className="w-full h-full"
                     />
                 ) : (
-                    // 默认显示一个简单的矩形作为占位（兼容旧数据）
+                    // Default to a simple rectangle as placeholder (compatible with legacy data)
                     <div
                         className="w-full h-full"
                         style={{

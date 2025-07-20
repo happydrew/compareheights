@@ -7,7 +7,8 @@ import html2canvas from 'html2canvas';
 import { CharacterDisplay } from './CharacterDisplay';
 import { ImageUploadModal } from './ImageUploadModal';
 import 'simplebar-react/dist/simplebar.min.css';
-import { PRESET_CHARACTERS, type Character, CharacterType } from './Characters';
+import { type Character, CharacterType } from './Characters';
+import { queryCharacters, type QueryCharactersResponse } from './api/characterService';
 import {
   Unit, Precision, convertHeightSmart, convertHeightSmartImperial, formatNumber, getBestUnit,
   getImperialGridUnitLabel, convertHeightPrecision, convertHeightForGridImperial, convertHeight
@@ -82,6 +83,41 @@ const HeightCompareTool: React.FC = () => {
   const [pixelsPerMState, setPixelsPerMState] = useState(1); // 添加新的状态
   const [showImageUploadModal, setShowImageUploadModal] = useState(false);
 
+  // API相关状态
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [isLoadingCharacters, setIsLoadingCharacters] = useState(false);
+  const [charactersError, setCharactersError] = useState<string | null>(null);
+
+  // 加载角色数据的函数
+  const loadCharacters = useCallback(async () => {
+    setIsLoadingCharacters(true);
+    setCharactersError(null);
+
+    try {
+      const response: QueryCharactersResponse = await queryCharacters({
+        type: selectedCategory,
+        search: searchTerm,
+        limit: 1000 // 可根据需要调整
+      });
+
+      if (response.success) {
+        setCharacters(response.data);
+      } else {
+        setCharactersError(response.message || 'Failed to load characters');
+      }
+    } catch (error) {
+      setCharactersError('Failed to load characters from API');
+      console.error('Error loading characters:', error);
+    } finally {
+      setIsLoadingCharacters(false);
+    }
+  }, [selectedCategory, searchTerm]);
+
+  // 初始加载和搜索条件变化时重新加载
+  useEffect(() => {
+    loadCharacters();
+  }, [loadCharacters]);
+
   // 添加重置缩放函数
   const resetZoom = () => {
     setPixelsPerMState(1); // 重置为默认值1，这会触发自动计算
@@ -94,12 +130,12 @@ const HeightCompareTool: React.FC = () => {
     }
   }, [comparisonItems.length])
 
-  // 计算图表展示区的像素高度
+  // Calculate pixel height of chart display area
   useEffect(() => {
     const chartArea = chartAreaRef.current;
     if (!chartArea) return;
 
-    // 初始设置高度 - 使用工具函数获取内容区域高度
+    // Initialize height - use utility function to get content area height
     const chartAreaHeightPix = getContentRect(chartArea).height;
     console.log('ChartAreaHeightPix: ' + chartAreaHeightPix);
     setChartAreaHeightPix(chartAreaHeightPix);
@@ -107,12 +143,12 @@ const HeightCompareTool: React.FC = () => {
     // 创建 ResizeObserver 实例
     const resizeObserver = new ResizeObserver(([entry]) => {
       if (entry) {
-        // contentRect.height 已经自动排除了内边距，直接使用即可
+        // contentRect.height already excludes padding, use directly
         setChartAreaHeightPix(entry.contentRect.height);
       }
     });
 
-    // 开始观察元素
+    // Start observing element
     resizeObserver.observe(chartArea);
 
     // 清理函数
@@ -121,21 +157,21 @@ const HeightCompareTool: React.FC = () => {
     };
   }, []);
 
-  /**当前m与px（px为屏幕像素）的转换比例，即1m等于多少px */
+  /**Current conversion ratio between m and px (screen pixels), i.e., how many px equals 1m */
   const pixelsPerM = useMemo(() => {
-    // 如果有手动调整的值，使用手动调整的值
+    // If there's a manually adjusted value, use the manually adjusted value
     if (pixelsPerMState !== 1) {
       return pixelsPerMState;
     }
-    // 否则使用自动计算的值，使用高精度计算
+    // Otherwise use auto-calculated value with high precision calculation
     const maxHeight = getMaxHeightInComparison(comparisonItems);
     const availablePixHeight = chartAreaHeightPix - 70;
 
-    // 使用高精度计算避免极端情况下的精度损失
+    // Use high precision calculation to avoid precision loss in extreme cases
     const pixHeightPrecision = Precision.from(availablePixHeight);
     const maxHeightPrecision = Precision.from(maxHeight);
     const ratio = pixHeightPrecision.divide(maxHeightPrecision);
-    console.log(`计算比例：availableHeight=${availablePixHeight}，maxHeight=${maxHeight}，ratio=${ratio}`);
+    console.log(`Calculate ratio: availableHeight=${availablePixHeight}, maxHeight=${maxHeight}, ratio=${ratio}`);
 
     return ratio.toNumber();
   }, [chartAreaHeightPix, comparisonItems, pixelsPerMState]);
@@ -197,33 +233,33 @@ const HeightCompareTool: React.FC = () => {
     if (!chartArea) return;
 
     const handleWheel = (e: WheelEvent) => {
-      // 检查是否按住了 Ctrl 键
+      // Check if Ctrl key is pressed
       if (e.ctrlKey) {
-        console.log('Ctrl 键被按住，开始缩放');
-        e.preventDefault(); // 阻止默认的缩放行为
+        console.log('Ctrl key pressed, starting zoom');
+        e.preventDefault(); // Prevent default zoom behavior
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
         handleZoom(delta);
       }
     }
 
-    // 添加事件监听
+    // Add event listener
     chartArea.addEventListener('wheel', handleWheel, { passive: false });
 
     // 清理函数
     return () => {
       chartArea.removeEventListener('wheel', handleWheel);
     };
-  }, [handleZoom]); // 移除 pixelsPerM 依赖，避免重复绑定事件
+  }, [handleZoom]); // Remove pixelsPerM dependency to avoid duplicate event binding
 
-  const [leftPanelSplit, setLeftPanelSplit] = useState(50); // 百分比，控制上下两个区域的高度分配
+  const [leftPanelSplit, setLeftPanelSplit] = useState(50); // Percentage, controls height allocation of top and bottom areas
   const [isDragging, setIsDragging] = useState(false);
 
-  // 添加 refs
+  // Add refs
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const characterListRef = useRef<HTMLDivElement>(null);
   const chartAreaRef = useRef<HTMLDivElement>(null);
 
-  // 添加拖拽状态
+  // Add drag state
   const [dragState, setDragState] = useState<DragState>({
     isDragging: false,
     draggedItemId: null,
@@ -236,7 +272,7 @@ const HeightCompareTool: React.FC = () => {
     draggedElement: null,
   });
 
-  // 添加左侧角色列表拖拽状态
+  // Add left panel character list drag state
   const [leftPanelDragState, setLeftPanelDragState] = useState<DragState>({
     isDragging: false,
     draggedItemId: null,
@@ -293,14 +329,64 @@ const HeightCompareTool: React.FC = () => {
   const exportButtonRef = useRef<HTMLButtonElement>(null)
 
   // 图表标题状态
-  const [chartTitle, setChartTitle] = useState('身高比较')
+  const [chartTitle, setChartTitle] = useState('Height Comparison')
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const titleInputRef = useRef<HTMLInputElement>(null)
+
+  // 添加水印到canvas
+  const addWatermark = (originalCanvas: HTMLCanvasElement): HTMLCanvasElement => {
+    console.log('Adding watermark to canvas:', originalCanvas.width, 'x', originalCanvas.height);
+
+    // 创建新的canvas来合成图像和水印
+    const newCanvas = document.createElement('canvas');
+    const ctx = newCanvas.getContext('2d');
+    if (!ctx) {
+      console.error('Failed to get canvas context');
+      return originalCanvas;
+    }
+
+    // 设置新canvas的尺寸与原canvas相同
+    newCanvas.width = originalCanvas.width;
+    newCanvas.height = originalCanvas.height;
+
+    // 首先绘制原始图像
+    ctx.drawImage(originalCanvas, 0, 0);
+
+    // 设置水印样式
+    const fontSize = Math.max(16, Math.min(36, originalCanvas.width / 25));
+    ctx.font = `${fontSize}px Arial, sans-serif`;
+    ctx.textAlign = 'center'; // 中心对齐
+    ctx.textBaseline = 'bottom';
+
+    // 水印文本
+    const watermarkText = 'compareheights.org';
+
+    // 计算水印位置 (底部中间)
+    const padding = 15;
+    const x = originalCanvas.width / 2; // 水平中心
+    const y = originalCanvas.height - padding; // 底部留边距
+
+    // 测量文本尺寸
+    const textMetrics = ctx.measureText(watermarkText);
+    const textWidth = textMetrics.width;
+    const textHeight = fontSize;
+
+    // 绘制半透明白色背景 (中心对齐的矩形)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fillRect(x - textWidth / 2 - 10, y - textHeight - 5, textWidth + 20, textHeight + 10);
+
+    // 绘制水印文字 - 黑色
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillText(watermarkText, x, y);
+
+    console.log('Watermark added successfully to new canvas');
+    return newCanvas;
+  };
 
   // 导出图表为图片
   const exportChart = useCallback(async (format: 'png' | 'jpg' | 'webp' = 'png') => {
     if (!chartAreaRef.current || comparisonItems.length === 0) {
-      console.warn('图表区域未找到或没有角色数据');
+      console.warn('Chart area not found or no character data');
       return;
     }
 
@@ -326,22 +412,23 @@ const HeightCompareTool: React.FC = () => {
         },
       });
 
-      // 下载图片
-      downloadCanvas(canvas, format, chartTitle);
+      // 添加水印后下载图片
+      const canvasWithWatermark = addWatermark(canvas);
+      downloadCanvas(canvasWithWatermark, format, chartTitle);
 
     } catch (error) {
-      console.error('导出失败:', error);
+      console.error('Export failed:', error);
 
-      // 错误处理：提供用户友好的提示
-      const errorMessage = `图片导出失败，可能的原因：
-• 图片资源加载问题
-• 浏览器安全限制
+      // Error handling: provide user-friendly tips
+      const errorMessage = `Image export failed. Possible causes:
+• Image resource loading issues
+• Browser security restrictions
 
-建议解决方案：
-1. 刷新页面后重试
-2. 使用浏览器截图功能：
-   - Chrome: F12 → Ctrl+Shift+P → 输入"screenshot"
-   - 或使用系统截图工具（Win+Shift+S）`;
+Suggested solutions:
+1. Refresh the page and try again
+2. Use browser screenshot function:
+   - Chrome: F12 → Ctrl+Shift+P → type "screenshot"
+   - Or use system screenshot tool (Win+Shift+S)`;
 
       alert(errorMessage);
     } finally {
@@ -350,51 +437,51 @@ const HeightCompareTool: React.FC = () => {
     }
   }, [comparisonItems, styleSettings.backgroundColor, chartTitle]);
 
-  // 下载Canvas为图片
+  // Download Canvas as image
   const downloadCanvas = (canvas: HTMLCanvasElement, format: 'png' | 'jpg' | 'webp', title: string) => {
     try {
       const link = document.createElement('a');
       link.download = title;
 
-      // 根据格式设置不同的质量参数
+      // Set different quality parameters based on format
       let dataUrl: string;
       if (format === 'jpg') {
-        dataUrl = canvas.toDataURL('image/jpeg', 0.92); // 高质量JPEG
+        dataUrl = canvas.toDataURL('image/jpeg', 0.92); // High quality JPEG
       } else if (format === 'webp') {
-        dataUrl = canvas.toDataURL('image/webp', 0.95); // 高质量WebP
+        dataUrl = canvas.toDataURL('image/webp', 0.95); // High quality WebP
       } else {
-        dataUrl = canvas.toDataURL('image/png'); // PNG无损
+        dataUrl = canvas.toDataURL('image/png'); // PNG lossless
       }
 
       link.href = dataUrl;
 
-      // 触发下载
+      // Trigger download
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      // 显示成功提示
-      console.log(`图片已导出为 ${format.toUpperCase()} 格式`);
+      // Show success message
+      console.log(`Image exported as ${format.toUpperCase()} format`);
 
     } catch (error) {
-      console.error('下载失败:', error);
-      alert('文件下载失败，请检查浏览器下载设置');
+      console.error('Download failed:', error);
+      alert('File download failed, please check browser download settings');
     }
   };
 
-  // 处理导出下拉菜单
+  // Handle export dropdown menu
   const handleExportClick = useCallback(() => {
     setShowExportDropdown(!showExportDropdown);
   }, [showExportDropdown]);
 
-  // 处理导出下拉菜单的外部点击
+  // Handle outside clicks for export dropdown menu
   useEffect(() => {
     if (!showExportDropdown) return;
 
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
 
-      // 如果点击的不是导出按钮及其下拉菜单，则关闭下拉菜单
+      // If clicked outside export button and dropdown menu, close dropdown
       if (exportButtonRef.current && !exportButtonRef.current.contains(target)) {
         setShowExportDropdown(false);
       }
@@ -450,16 +537,16 @@ const HeightCompareTool: React.FC = () => {
 
       const target = event.target as HTMLElement;
 
-      // 检查点击是否在右侧面板内
+      // Check if click is inside right panel
       const isClickInRightPanel = rightPanelRef.current?.contains(target);
 
-      // 检查点击是否在某个角色项上
+      // Check if click is on a character item
       const isClickOnCharacterItem = target.closest('[data-character-item="true"]');
 
-      // 检查是否点击了编辑按钮
-      const isClickOnEditButton = target.closest('button[title="编辑角色"]');
+      // Check if edit button was clicked
+      const isClickOnEditButton = target.closest('button[title="Edit character"]');
 
-      // 如果点击不在右侧面板内且不在角色项上且不是编辑按钮，关闭面板
+      // If click is not in right panel, not on character item, and not edit button, close panel
       if (!isClickInRightPanel && !isClickOnCharacterItem && !isClickOnEditButton) {
         setShowRightPanel(false);
         setSelectedCharacter(null);
@@ -474,7 +561,7 @@ const HeightCompareTool: React.FC = () => {
     };
   }, [showRightPanel]);
 
-  // 处理拖拽开始
+  // Handle drag start
   const handleDragStart = useCallback((itemId: string, e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -760,26 +847,26 @@ const HeightCompareTool: React.FC = () => {
     }
   }, [leftPanelDragState.isDragging, handleLeftPanelDragMove, handleLeftPanelDragEnd]);
 
-  // 计算占位元素的样式（被拖拽时显示为透明占位）
+  // Calculate placeholder element styles (show as transparent placeholder when dragged)
   const getItemStyle = useCallback((itemId: string, index: number): React.CSSProperties => {
     if (!dragState.isDragging || itemId !== dragState.draggedItemId) {
       return {};
     }
 
-    // 被拖拽的元素在原位置显示为透明占位
+    // Dragged element shows as transparent placeholder in original position
     return {
       opacity: 0,
       visibility: 'hidden'
     };
   }, [dragState]);
 
-  // 计算左侧角色列表项目的样式
+  // Calculate left panel character list item styles
   const getLeftPanelItemStyle = useCallback((itemId: string): React.CSSProperties => {
     if (!leftPanelDragState.isDragging || itemId !== leftPanelDragState.draggedItemId) {
       return {};
     }
 
-    // 被拖拽的元素在原位置显示为透明占位
+    // Dragged element shows as transparent placeholder in original position
     return {
       opacity: 0.3,
       pointerEvents: 'none'
@@ -787,16 +874,12 @@ const HeightCompareTool: React.FC = () => {
   }, [leftPanelDragState]);
 
 
-  // 筛选角色
-  const filteredCharacters = PRESET_CHARACTERS.filter(char => {
-    const matchesSearch = char.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || char.type === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+  // Characters已经通过API过滤，直接使用
+  const filteredCharacters = characters;
 
 
   const addToComparison = (character: Character) => {
-    // 计算相同原始角色的数量，用于生成序号
+    // Calculate count of same original characters for generating sequence numbers
     let maxSimilarNameIndex: number = -1;
     for (let i = 0; i < comparisonItems.length; i++) {
       if (comparisonItems[i].character.name.length >= character.name.length &&
@@ -817,12 +900,12 @@ const HeightCompareTool: React.FC = () => {
       }
     }
 
-    // 创建角色的深拷贝，避免引用同一个对象
+    // Create deep copy of character to avoid referencing same object
     const newCharacter: Character = {
       ...character,
-      id: `${character.id}-${Date.now()}-${Math.random()}`, // 确保ID唯一
+      id: `${character.id}-${Date.now()}-${Math.random()}`, // Ensure unique ID
       name: maxSimilarNameIndex == -1 ? character.name : `${character.name} ${maxSimilarNameIndex + 1}`,
-      isCustom: true // 标记为自定义，允许编辑
+      isCustom: true // Mark as custom, allow editing
     };
 
     const newItem: ComparisonItem = {
@@ -859,18 +942,18 @@ const HeightCompareTool: React.FC = () => {
   const updateCharacter = (key: string, value: any) => {
     if (!selectedCharacter || !selectedComparisonItemId) return;
 
-    // 更新比较列表中的角色
+    // Update character in comparison list
     setComparisonItems(comparisonItems.map(item =>
       item.id === selectedComparisonItemId
         ? { ...item, character: { ...item.character, [key]: value } }
         : item
     ));
 
-    // 更新选中的角色
+    // Update selected character
     setSelectedCharacter({ ...selectedCharacter, [key]: value });
   };
 
-  // 处理图片上传并创建角色
+  // Handle image upload and create character
   const handleImageUpload = (imageData: {
     imageUrl: string;
     heightInM: number;
@@ -879,35 +962,35 @@ const HeightCompareTool: React.FC = () => {
   }) => {
     const { imageUrl, heightInM, widthInM, aspectRatio } = imageData;
 
-    // 计算宽度：如果没有指定宽度，则根据高度和宽高比计算
+    // Calculate width: if no width specified, calculate based on height and aspect ratio
     const calculatedWidthInM = widthInM || (heightInM * aspectRatio);
 
-    // 创建新角色
+    // Create new character
     const newCharacter: Character = {
       id: `upload-${Date.now()}-${Math.random()}`,
-      name: '上传角色',
+      name: 'Uploaded Character',
       height: heightInM,
       // width: calculatedWidthInM,
       type: CharacterType.UPLOAD,
-      // 媒体相关字段 - 扁平化
+      // Media related fields - flattened
       mediaType: 'image',
       mediaUrl: imageUrl,
       thumbnailUrl: imageUrl,
-      // 外观相关字段 - 扁平化
+      // Appearance related fields - flattened
       color: '#10B981',
       colorCustomizable: false,
       isCustom: true,
       isUploadedImage: true
     };
 
-    // 添加到比较列表
+    // Add to comparison list
     addToComparison(newCharacter);
 
-    // 关闭上传弹窗
+    // Close upload modal
     setShowImageUploadModal(false);
   };
 
-  // 处理拖拽分隔线
+  // Handle dragging separator line
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     e.preventDefault();
@@ -921,7 +1004,7 @@ const HeightCompareTool: React.FC = () => {
 
     const rect = leftPanel.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    // 确保分割线始终可见，限制在25%-75%之间
+    // Ensure separator line is always visible, limit between 25%-75%
     const percentage = Math.max(25, Math.min(75, (y / rect.height) * 100));
     setLeftPanelSplit(percentage);
   }, [isDragging]);
@@ -961,7 +1044,7 @@ const HeightCompareTool: React.FC = () => {
     e.preventDefault();
   }, [dragState.isDragging]);
 
-  // 处理横向滚动拖拽移动
+  // Handle horizontal scroll drag move
   const handleHorizontalScrollMove = useCallback((e: MouseEvent) => {
     if (!horizontalScrollState.isDragging) return;
 
@@ -974,14 +1057,14 @@ const HeightCompareTool: React.FC = () => {
     e.preventDefault();
   }, [horizontalScrollState]);
 
-  // 处理横向滚动拖拽结束
+  // Handle horizontal scroll drag end
   const handleHorizontalScrollEnd = useCallback(() => {
     if (horizontalScrollState.isDragging) {
       setHorizontalScrollState(prev => ({ ...prev, isDragging: false }));
     }
   }, [horizontalScrollState.isDragging]);
 
-  // 添加横向滚动事件监听
+  // Add horizontal scroll event listeners
   useEffect(() => {
     if (horizontalScrollState.isDragging) {
       document.addEventListener('mousemove', handleHorizontalScrollMove);
@@ -994,7 +1077,7 @@ const HeightCompareTool: React.FC = () => {
   }, [horizontalScrollState.isDragging, handleHorizontalScrollMove, handleHorizontalScrollEnd]);
 
 
-  // 更新滚动条状态
+  // Update scrollbar state
   const updateScrollbarState = () => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -1125,7 +1208,7 @@ const HeightCompareTool: React.FC = () => {
     setScrollbarState(prev => ({ ...prev, isDragging: false }));
   }, []);
 
-  // 监听滚动条拖拽事件
+  // Listen to scrollbar drag events
   useEffect(() => {
     if (scrollbarState.isDragging) {
       document.addEventListener('mousemove', handleScrollbarDragMove);
@@ -1137,7 +1220,7 @@ const HeightCompareTool: React.FC = () => {
     }
   }, [scrollbarState.isDragging, handleScrollbarDragMove, handleScrollbarDragEnd]);
 
-  // // 计算滚动条thumb的位置和大小
+  // // Calculate scrollbar thumb position and size
   const getScrollbarThumbStyle = useCallback(() => {
     const { scrollLeft, scrollWidth, clientWidth } = scrollbarState;
 
@@ -1157,7 +1240,7 @@ const HeightCompareTool: React.FC = () => {
     };
   }, [scrollbarState]);
 
-  // 组件卸载时清理定时器
+  // Clean up timers when component unmounts
   useEffect(() => {
     return () => {
       if (zoomIndicatorTimerRef.current) {
@@ -1168,7 +1251,7 @@ const HeightCompareTool: React.FC = () => {
 
   return (
     <>
-      {/* 全局细滚动条样式 */}
+      {/* Global thin scrollbar styles */}
       <style dangerouslySetInnerHTML={{
         __html: `
           .thin-scrollbar::-webkit-scrollbar {
@@ -1195,9 +1278,9 @@ const HeightCompareTool: React.FC = () => {
             scrollbar-color: #cbd5e1 transparent;
           }
 
-          /* 完全隐藏滚动条但保持滚动功能 - 用于角色展示容器 */
+          /* Completely hide scrollbar but maintain scroll function - for character display container */
           .custom-scrollbar {
-            /* 隐藏滚动条但保持滚动功能 */
+            /* Hide scrollbar but maintain scroll function */
             -ms-overflow-style: none;  /* IE and Edge */
             scrollbar-width: none;  /* Firefox */
           }
@@ -1206,7 +1289,7 @@ const HeightCompareTool: React.FC = () => {
             display: none;  /* Chrome, Safari, Opera */
           }
 
-          /* 拖动时的样式 */
+          /* Styles when dragging */
           .dragging-item {
             user-select: none;
             -webkit-user-select: none;
@@ -1222,18 +1305,18 @@ const HeightCompareTool: React.FC = () => {
       }} />
 
       <div className="w-full relative flex bg-gray-50 h-[85vh]">
-        {/* 左侧面板 */}
+        {/* Left panel */}
         <div className="min-w-80 w-1/5 h-full bg-white border-r border-gray-200 flex flex-col left-panel">
-          {/* 当前角色列表 */}
+          {/* Current character list */}
           <div className="border-b border-gray-200 flex flex-col" style={{ height: `${leftPanelSplit}%` }}>
-            <div className="px-4 py-2 border-b border-gray-200 bg-gray-100">
+            <div className="px-2 py-2 border-b border-gray-200 bg-gray-100">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">当前角色</h2>
+                <h2 className="text-base font-semibold">Current Characters</h2>
                 <div className="flex gap-1">
                   <button
                     onClick={() => setUnit(unit === Unit.CM ? Unit.FT_IN : Unit.CM)}
                     className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm font-medium"
-                    title={`切换到${unit === Unit.CM ? '英尺' : '厘米'}`}
+                    title={`Switch to ${unit === Unit.CM ? 'feet' : 'centimeters'}`}
                   >
                     <span className={unit === Unit.CM ? 'text-blue-600' : 'text-gray-500'}>cm</span>
                     <ArrowLeftRight className="w-3.5 h-3.5 text-gray-400" />
@@ -1246,7 +1329,7 @@ const HeightCompareTool: React.FC = () => {
             <div ref={characterListRef} className="flex-1 p-4 overflow-y-auto thin-scrollbar">
               <div className="space-y-1">
                 {comparisonItems.length === 0 ? (
-                  <p className="text-gray-500 text-sm">暂无比较对象</p>
+                  <p className="text-gray-500 text-sm">No characters to compare</p>
                 ) : (
                   comparisonItems
                     .sort((a, b) => a.order - b.order)
@@ -1272,7 +1355,7 @@ const HeightCompareTool: React.FC = () => {
                             }
                           </span>
                           <button
-                            title="拖拽调整位置"
+                            title="Drag to reorder"
                             onMouseDown={(e) => {
                               e.stopPropagation();
                               handleLeftPanelDragStart(item.id, e);
@@ -1286,7 +1369,7 @@ const HeightCompareTool: React.FC = () => {
                             <GripVertical className="w-3 h-3" />
                           </button>
                           <button
-                            title="删除角色"
+                            title="Remove character"
                             onClick={(e) => {
                               e.stopPropagation();
                               removeFromComparison(item.id);
@@ -1316,14 +1399,14 @@ const HeightCompareTool: React.FC = () => {
 
           {/* 角色库 */}
           <div className="flex flex-col" style={{ height: `${100 - leftPanelSplit}%` }}>
-            <div className="px-4 py-2 border-b border-gray-200 bg-gray-100">
+            <div className="px-2 py-2 border-b border-gray-200 bg-gray-100">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">角色库</h2>
+                <h2 className="text-base font-semibold">Character Library</h2>
                 <div className="relative">
                   <Search className="absolute left-2 top-2 w-3 h-3 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="搜索..."
+                    placeholder="Search..."
                     className="text-sm pl-7 pr-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 w-36"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -1342,7 +1425,7 @@ const HeightCompareTool: React.FC = () => {
                   : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
               >
-                通用
+                Generic
               </button>
               <button
                 onClick={() => setSelectedCategory(CharacterType.CELEBRITY)}
@@ -1351,7 +1434,7 @@ const HeightCompareTool: React.FC = () => {
                   : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
               >
-                名人
+                Celebrity
               </button>
               <button
                 onClick={() => setSelectedCategory(CharacterType.OBJECT)}
@@ -1360,7 +1443,7 @@ const HeightCompareTool: React.FC = () => {
                   : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
               >
-                物体
+                Object
               </button>
               <button
                 onClick={() => setSelectedCategory(CharacterType.BIOLOGY)}
@@ -1369,7 +1452,7 @@ const HeightCompareTool: React.FC = () => {
                   : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
               >
-                生物
+                Biology
               </button>
               <button
                 onClick={() => setSelectedCategory(CharacterType.UPLOAD)}
@@ -1378,7 +1461,7 @@ const HeightCompareTool: React.FC = () => {
                   : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
               >
-                上传
+                Upload
               </button>
             </div>
 
@@ -1386,75 +1469,111 @@ const HeightCompareTool: React.FC = () => {
             <div className="flex-1 overflow-y-auto p-4 thin-scrollbar relative">
               <div className="absolute inset-4">
                 {selectedCategory === CharacterType.UPLOAD ? (
-                  /* 上传图片界面 */
+                  /* Upload image interface */
                   <div className="flex flex-col items-center justify-center h-full">
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center w-full max-w-sm">
                       <div className="text-4xl mb-4">📷</div>
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">上传图片</h3>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Upload Image</h3>
                       <p className="text-sm text-gray-500 mb-4">
-                        支持 JPG、PNG、GIF 格式<br />
-                        上传后可进行裁剪
+                        Supports JPG, PNG, GIF formats<br />
+                        Crop after upload
                       </p>
                       <button
                         className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition-colors"
                         onClick={() => setShowImageUploadModal(true)}
                       >
-                        选择图片
+                        Select Image
                       </button>
                     </div>
                   </div>
                 ) : (
-                  /* 预设角色网格 */
-                  <div className="grid grid-cols-3 gap-2">
-                    {filteredCharacters.map(character => (
-                      <div
-                        key={character.id}
-                        data-character-item="true"
-                        className="relative group cursor-pointer"
-                        onClick={() => {
-                          addToComparison(character);
-                        }}
-                      >
-                        {/* 正方形容器 */}
-                        <div className="aspect-square w-full flex items-center justify-center bg-gray-50 rounded overflow-hidden">
-                          {/* 角色缩略图 - 保持原始比例 */}
-                          {character.thumbnailUrl ? (
-                            <img
-                              src={character.thumbnailUrl}
-                              alt={character.name}
-                              className="w-full h-full object-contain hover:scale-105 transition-transform duration-200"
-                            />
-                          ) : (
-                            // fallback 到表情符号图标
+                  /* Character grid with loading/error states */
+                  <>
+                    {/* Loading state */}
+                    {isLoadingCharacters && (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <p className="text-gray-500 text-sm">Loading characters...</p>
+                      </div>
+                    )}
+
+                    {/* Error state */}
+                    {charactersError && !isLoadingCharacters && (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <div className="text-red-500 text-4xl mb-4">⚠️</div>
+                        <p className="text-red-600 text-sm text-center mb-4">{charactersError}</p>
+                        <button
+                          onClick={loadCharacters}
+                          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm"
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Character grid */}
+                    {!isLoadingCharacters && !charactersError && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {filteredCharacters.length === 0 ? (
+                          <div className="col-span-3 flex flex-col items-center justify-center py-8">
+                            <div className="text-gray-400 text-4xl mb-4">🔍</div>
+                            <p className="text-gray-500 text-sm text-center">
+                              {searchTerm ? `No characters found for "${searchTerm}"` : 'No characters available'}
+                            </p>
+                          </div>
+                        ) : (
+                          filteredCharacters.map(character => (
                             <div
-                              className={`w-12 h-16 rounded flex items-center justify-center text-white text-sm font-bold hover:ring-2 hover:ring-gray-300 hover:ring-offset-1`}
-                              style={{
-                                backgroundColor: character.color || 'transparent'
+                              key={character.id}
+                              data-character-item="true"
+                              className="relative group cursor-pointer"
+                              onClick={() => {
+                                addToComparison(character);
                               }}
                             >
-                              {character.type === CharacterType.GENERIC ? '👤' :
-                                character.type === CharacterType.CELEBRITY ? '⭐' :
-                                  character.type === CharacterType.OBJECT ? '🏢' :
-                                    character.type === CharacterType.BIOLOGY ? '🐾' :
-                                      character.type === CharacterType.UPLOAD ? '📷' : '○'}
-                            </div>
-                          )}
-                        </div>
+                              {/* 正方形容器 */}
+                              <div className="aspect-square w-full flex items-center justify-center bg-gray-50 rounded overflow-hidden">
+                                {/* 角色缩略图 - 保持原始比例 */}
+                                {character.thumbnailUrl ? (
+                                  <img
+                                    src={character.thumbnailUrl}
+                                    alt={character.name}
+                                    className="w-full h-full object-contain hover:scale-105 transition-transform duration-200"
+                                  />
+                                ) : (
+                                  // fallback 到表情符号图标
+                                  <div
+                                    className={`w-12 h-16 rounded flex items-center justify-center text-white text-sm font-bold hover:ring-2 hover:ring-gray-300 hover:ring-offset-1`}
+                                    style={{
+                                      backgroundColor: character.color || 'transparent'
+                                    }}
+                                  >
+                                    {character.type === CharacterType.GENERIC ? '👤' :
+                                      character.type === CharacterType.CELEBRITY ? '⭐' :
+                                        character.type === CharacterType.OBJECT ? '🏢' :
+                                          character.type === CharacterType.BIOLOGY ? '🐾' :
+                                            character.type === CharacterType.UPLOAD ? '📷' : '○'}
+                                  </div>
+                                )}
+                              </div>
 
-                        {/* 悬浮提示 */}
-                        <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 
+                              {/* 悬浮提示 */}
+                              <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 
                         w-full max-h-full break-words overflow-hidden whitespace-normal flex flex-col justify-center items-center bg-white/80 text-gray-800 
                         opacity-0 text-xs rounded-lg group-hover:opacity-100 z-10 backdrop-blur-sm border 
                         border-gray-200/50 shadow-lg transition-all duration-200 ease-out group-hover:scale-105 
                         `}>
-                          <div className="font-medium text-gray-900 text-center">{character.name}</div>
-                          <div className="text-gray-600 text-[11px] text-center">
-                            {convertHeightSmart(character.height, true)} / {convertHeightSmartImperial(character.height)}
-                          </div>
-                        </div>
+                                <div className="font-medium text-gray-900 text-center">{character.name}</div>
+                                <div className="text-gray-600 text-[11px] text-center">
+                                  {convertHeightSmart(character.height, true)} / {convertHeightSmartImperial(character.height)}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1470,9 +1589,9 @@ const HeightCompareTool: React.FC = () => {
               <div className="px-4 pt-4 pb-6 bg-white border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold">身高比较</h1>
+                    <h1 className="text-lg font-bold">Height Comparison</h1>
                     <div className="text-sm text-gray-600">
-                      {comparisonItems.length} 个对象
+                      {comparisonItems.length} {comparisonItems.length === 1 ? 'object' : 'objects'}
                     </div>
                     {/* <div className="text-sm text-gray-600">
                       pixelsPerM: {formatNumber(pixelsPerM, 10)}
@@ -1486,7 +1605,7 @@ const HeightCompareTool: React.FC = () => {
                       <button
                         onClick={() => setUnit(unit === Unit.CM ? Unit.FT_IN : Unit.CM)}
                         className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 text-sm font-medium"
-                        title={`切换到${unit === Unit.CM ? '英尺' : '厘米'}`}
+                        title={`Switch to ${unit === Unit.CM ? 'feet' : 'centimeters'}`}
                       >
                         <span className={unit === Unit.CM ? 'text-blue-600' : 'text-gray-500'}>cm</span>
                         <ArrowLeftRight className="w-3.5 h-3.5 text-gray-400" />
@@ -1499,21 +1618,21 @@ const HeightCompareTool: React.FC = () => {
                         ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
                         : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
                         }`}
-                      title="重置缩放"
+                      title="Reset zoom"
                       disabled={pixelsPerMState === 1}
                     >
                       <RotateCcw className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => {
-                        console.log('点击清除按钮，当前角色数量:', comparisonItems.length);
+                        console.log('Clear button clicked, current character count:', comparisonItems.length);
                         clearAllCharacters();
                       }}
                       className={`p-2 rounded transition-colors ${comparisonItems.length === 0
                         ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
                         : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
                         }`}
-                      title="重置/清除全部角色"
+                      title="Clear all characters"
                       disabled={comparisonItems.length === 0}
                     >
                       <Trash2 className="w-4 h-4" />
@@ -1522,17 +1641,10 @@ const HeightCompareTool: React.FC = () => {
                     <button
                       onClick={() => setStyleSettings({ ...styleSettings, gridLines: !styleSettings.gridLines })}
                       className={`p-2 rounded ${styleSettings.gridLines ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
-                      title="网格线"
+                      title="Grid lines"
                     >
                       <Grid className="w-4 h-4" />
                     </button>
-                    {/* <button
-                      onClick={() => setStyleSettings({ ...styleSettings, labels: !styleSettings.labels })}
-                      className={`p-2 rounded ${styleSettings.labels ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
-                      title="标签"
-                    >
-                      {styleSettings.labels ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                    </button> */}
 
                     {/* 导出按钮 - 带下拉菜单 */}
                     <div className="relative" ref={exportButtonRef}>
@@ -1544,7 +1656,7 @@ const HeightCompareTool: React.FC = () => {
                             ? 'bg-blue-100 text-blue-600'
                             : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
                           }`}
-                        title={comparisonItems.length === 0 ? '请先添加角色' : '导出图片'}
+                        title={comparisonItems.length === 0 ? 'Please add characters first' : 'Export image'}
                         disabled={comparisonItems.length === 0 || isExporting}
                       >
                         {isExporting ? (
@@ -1554,58 +1666,52 @@ const HeightCompareTool: React.FC = () => {
                         )}
                       </button>
 
-                      {/* 导出格式下拉菜单 */}
-                      {showExportDropdown && comparisonItems.length > 0 && (
-                        <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[1003] min-w-[160px]">
+                      {/* Export format dropdown menu */}
+                      {showExportDropdown && (
+                        <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[1003]">
                           <div className="py-1">
                             <button
                               onClick={() => exportChart('png')}
                               disabled={isExporting}
                               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                              title='High quality, transparent background'
                             >
                               <span className="mr-3">🖼️</span>
-                              <div>
-                                <div className="font-medium">PNG</div>
-                                <div className="text-xs text-gray-500">高质量，透明背景</div>
-                              </div>
+                              <div className="font-medium">PNG</div>
                             </button>
                             <button
                               onClick={() => exportChart('jpg')}
                               disabled={isExporting}
                               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                              title='Smaller file size, easy to share'
                             >
                               <span className="mr-3">📷</span>
-                              <div>
-                                <div className="font-medium">JPG</div>
-                                <div className="text-xs text-gray-500">文件较小，分享方便</div>
-                              </div>
+                              <div className="font-medium">JPG</div>
                             </button>
                             <button
                               onClick={() => exportChart('webp')}
                               disabled={isExporting}
                               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                              title='Modern format, high compression'
                             >
                               <span className="mr-3">🌐</span>
-                              <div>
-                                <div className="font-medium">WebP</div>
-                                <div className="text-xs text-gray-500">现代格式，高压缩</div>
-                              </div>
+                              <div className="font-medium">WebP</div>
                             </button>
                           </div>
                         </div>
                       )}
                     </div>
-                    <button className="p-2 rounded bg-gray-100 text-gray-600 hover:bg-gray-200" title="分享">
+                    <button className="p-2 rounded bg-gray-100 text-gray-600 hover:bg-gray-200" title="Share">
                       <Share2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
               </div>
 
-              {/* 图表区域 */}
+              {/* Chart area */}
               <div className="w-full flex-1 p-4 thin-scrollbar relative" style={{ backgroundColor: styleSettings.backgroundColor, height: `calc(100% - 16px)` }}>
                 <div ref={chartAreaRef} className="relative px-20 w-full h-full flex items-end justify-center">
-                  {/* 图表标题 - 可编辑 */}
+                  {/* Chart title - editable */}
                   <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 z-[1001] cursor-text">
                     {isEditingTitle ? (
                       <input
@@ -1615,14 +1721,14 @@ const HeightCompareTool: React.FC = () => {
                         onChange={(e) => setChartTitle(e.target.value)}
                         onBlur={() => setIsEditingTitle(false)}
                         onKeyDown={handleTitleKeyDown}
-                        className="text-lg font-medium text-gray-800 bg-white/90 border border-gray-300 rounded px-3 py-1 text-center min-w-[200px] focus:outline-none focus:ring-1 focus:ring-gray-300 focus:border-transparent shadow-sm"
-                        placeholder="输入图表标题"
+                        className="text-lg font-medium text-gray-800 bg-white/90 border border-gray-300 rounded px-3 py-1 text-center min-w-[300px] max-w-[50vw] focus:outline-none focus:ring-1 focus:ring-gray-300 focus:border-transparent shadow-sm"
+                        placeholder="Enter chart title"
                       />
                     ) : (
                       <h2
                         onClick={() => setIsEditingTitle(true)}
-                        className="text-lg font-medium text-gray-800 bg-white/80 backdrop-blur-sm rounded px-3 py-1 hover:bg-white/90 transition-colors shadow-sm border border-transparent hover:border-gray-200"
-                        title="点击编辑标题"
+                        className="text-lg font-medium text-gray-800 bg-white/80 backdrop-blur-sm rounded px-3 py-1 hover:bg-white/90 transition-colors shadow-sm border border-transparent hover:border-gray-200 max-w-[50vw] break-words text-center"
+                        title="Click to edit title"
                       >
                         {chartTitle}
                       </h2>
@@ -1641,7 +1747,7 @@ const HeightCompareTool: React.FC = () => {
                       {/* 自定义tooltip */}
                       <div className="absolute left-1/2 transform -translate-x-1/2 -translate-y-full top-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[1003]">
                         <div className="bg-white text-gray-700 text-xs rounded py-1 px-2 whitespace-nowrap">
-                          放大 (按住 Ctrl + 滚动鼠标快捷缩放)
+                          Zoom in (hold Ctrl + scroll for quick zoom)
                         </div>
                       </div>
                     </div>
@@ -1655,7 +1761,7 @@ const HeightCompareTool: React.FC = () => {
                       {/* 自定义tooltip */}
                       <div className="absolute left-1/2 transform -translate-x-1/2 translate-y-full bottom-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[1003]">
                         <div className="bg-white text-gray-700 text-xs rounded py-1 px-2 whitespace-nowrap">
-                          缩小 (按住 Ctrl + 滚动鼠标快捷缩放)
+                          Zoom out (hold Ctrl + scroll for quick zoom)
                           <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-2 border-r-2 border-t-4 border-transparent border-t-gray-800"></div>
                         </div>
                       </div>
@@ -1687,10 +1793,10 @@ const HeightCompareTool: React.FC = () => {
                         {/* 动态单位标签 */}
                         <div className="absolute top-0 left-0 w-full">
                           <span className="absolute left-2 -top-9 text-sm font-bold text-gray-700">
-                            公制 ({unifiedMetricUnit})
+                            Metric ({unifiedMetricUnit})
                           </span>
                           <span className="absolute right-2 -top-9 text-sm font-bold text-gray-700">
-                            英制 ({getImperialGridUnitLabel(maxHeightInComparison)})
+                            Imperial ({getImperialGridUnitLabel(maxHeightInComparison)})
                           </span>
                         </div>
 
@@ -1742,7 +1848,7 @@ const HeightCompareTool: React.FC = () => {
                       {comparisonItems.length === 0 ? (
                         <div className="w-full h-full flex flex-col items-center justify-end text-gray-500">
                           <Users className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                          <p className="text-lg">请从左侧添加角色进行比较</p>
+                          <p className="text-lg">Add characters from the left panel to compare</p>
                         </div>
                       ) : (
                         <div
