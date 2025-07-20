@@ -12,7 +12,14 @@
       "Bash(awk:*)",
       "Bash(npm run build:*)",
       "Bash(npm install:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npx tsc:*)",
+      "Bash(PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\")",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:html2canvas.hertzen.com)"
     ],
     "deny": []
   }

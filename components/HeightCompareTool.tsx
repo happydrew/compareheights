@@ -1,282 +1,18 @@
-export { 
-  CharacterType, 
-  type Character, 
-  type CharacterMedia,
-  type CharacterAppearance,
-  Unit, 
-  convertHeight, 
-  convertHeightSmart, 
-  convertHeightSmartImperial, 
-  getBestUnit, 
-  UnitSystem, 
-  UNIT_CONVERSIONS,
-  CharacterImageRenderer,
-  InlineSVGRenderer,
-  imageCache,
-  useCharacterDimensions
-};
-
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   Trash2, Search, Users, Share2, Download,
   Grid, Eye, EyeOff, ArrowLeftRight, RotateCcw, ZoomIn, ZoomOut, GripVertical
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
 import { CharacterDisplay } from './CharacterDisplay';
 import { ImageUploadModal } from './ImageUploadModal';
 import 'simplebar-react/dist/simplebar.min.css';
-
-// 高精度数值处理类
-// 注意：当前实现使用JavaScript的number类型，在极端尺寸跨度下可能有精度限制
-// 测试范围：夸克(10^-13 cm) 到 宇宙(10^28 cm)，跨度约10^41
-// JavaScript Number 精度：约15-17位有效数字，最大安全整数2^53-1
-// 对于超过精度范围的极端计算，可能需要考虑使用decimal.js或big.js库
-class Precision {
-  private value: number;
-  private precision: number;
-
-  constructor(value: number | string, precision: number = 15) {
-    this.value = typeof value === 'string' ? parseFloat(value) : value;
-    this.precision = precision;
-  }
-
-  static from(value: number | string, precision?: number): Precision {
-    return new Precision(value, precision);
-  }
-
-  multiply(other: number | Precision): Precision {
-    const otherValue = other instanceof Precision ? other.value : other;
-    return new Precision(this.value * otherValue, this.precision);
-  }
-
-  divide(other: number | Precision): Precision {
-    const otherValue = other instanceof Precision ? other.value : other;
-    return new Precision(this.value / otherValue, this.precision);
-  }
-
-  add(other: number | Precision): Precision {
-    const otherValue = other instanceof Precision ? other.value : other;
-    return new Precision(this.value + otherValue, this.precision);
-  }
-
-  subtract(other: number | Precision): Precision {
-    const otherValue = other instanceof Precision ? other.value : other;
-    return new Precision(this.value - otherValue, this.precision);
-  }
-
-  toNumber(): number {
-    return this.value;
-  }
-
-  toString(decimals?: number): string {
-    if (decimals !== undefined) {
-      return this.value.toFixed(decimals);
-    }
-    return this.value.toString();
-  }
-
-  toExponential(decimals?: number): string {
-    return this.value.toExponential(decimals);
-  }
-}
-
-// 单位制枚举
-enum UnitSystem {
-  // 公制单位
-  NANOMETER = 'nm',
-  MICROMETER = 'μm',
-  MILLIMETER = 'mm',
-  CENTIMETER = 'cm',
-  METER = 'm',
-  KILOMETER = 'km',
-  // 英制单位
-  INCH = 'in',
-  FOOT = 'ft',
-  MILE = 'mi'
-}
-
-// 单位转换系数（基于米）
-const UNIT_CONVERSIONS = {
-  [UnitSystem.NANOMETER]: 1000000000,  // 1m = 10^9 nm
-  [UnitSystem.MICROMETER]: 1000000,    // 1m = 10^6 μm
-  [UnitSystem.MILLIMETER]: 1000,       // 1m = 1000 mm
-  [UnitSystem.CENTIMETER]: 100,        // 1m = 100 cm
-  [UnitSystem.METER]: 1,               // 1m = 1 m
-  [UnitSystem.KILOMETER]: 0.001,       // 1m = 0.001 km
-  [UnitSystem.INCH]: 39.3701,          // 1m = 39.3701 in
-  [UnitSystem.FOOT]: 3.28084,          // 1m = 3.28084 ft
-  [UnitSystem.MILE]: 0.000621371       // 1m = 0.000621371 mi
-};
-
-// 动态选择最适合的单位制 - 优化版，避免科学计数法
-function getBestUnit(heightInM: number, preferMetric: boolean = true): UnitSystem {
-  const absHeight = Math.abs(heightInM);
-
-  if (preferMetric) {
-    // 先尝试转换到各个单位，检查是否会产生科学计数法
-    const nmValue = absHeight * UNIT_CONVERSIONS[UnitSystem.NANOMETER];
-    const umValue = absHeight * UNIT_CONVERSIONS[UnitSystem.MICROMETER];
-    const mmValue = absHeight * UNIT_CONVERSIONS[UnitSystem.MILLIMETER];
-    const cmValue = absHeight * UNIT_CONVERSIONS[UnitSystem.CENTIMETER];
-    const mValue = absHeight * UNIT_CONVERSIONS[UnitSystem.METER];
-    const kmValue = absHeight * UNIT_CONVERSIONS[UnitSystem.KILOMETER];
-
-    // 从小到大检查，优先选择不需要科学计数法的最合适单位
-    if (absHeight < 0.00001) {
-      // 纳米级别
-      if (nmValue >= 1 && nmValue < 1000) return UnitSystem.NANOMETER;
-      if (umValue >= 0.001 && umValue < 1000) return UnitSystem.MICROMETER;
-      if (mmValue >= 0.001 && mmValue < 1000) return UnitSystem.MILLIMETER;
-      return UnitSystem.NANOMETER; // 回退到纳米
-    }
-
-    if (absHeight < 0.01) {
-      // 微米级别  
-      if (umValue >= 1 && umValue < 1000) return UnitSystem.MICROMETER;
-      if (mmValue >= 0.001 && mmValue < 1000) return UnitSystem.MILLIMETER;
-      if (cmValue >= 0.001 && cmValue < 1000) return UnitSystem.CENTIMETER;
-      return UnitSystem.MICROMETER; // 回退到微米
-    }
-
-    if (absHeight < 0.1) {
-      // 毫米级别
-      if (mmValue >= 1 && mmValue < 1000) return UnitSystem.MILLIMETER;
-      if (cmValue >= 0.001 && cmValue < 1000) return UnitSystem.CENTIMETER;
-      if (mValue >= 0.001 && mValue < 1000) return UnitSystem.METER;
-      return UnitSystem.MILLIMETER; // 回退到毫米
-    }
-
-    if (absHeight < 10) {
-      // 厘米级别
-      if (cmValue >= 1 && cmValue < 1000) return UnitSystem.CENTIMETER;
-      if (mValue >= 0.001 && mValue < 1000) return UnitSystem.METER;
-      if (kmValue >= 0.001 && kmValue < 1000) return UnitSystem.KILOMETER;
-      return UnitSystem.CENTIMETER; // 回退到厘米
-    }
-
-    if (absHeight < 1000) {
-      // 米级别
-      if (mValue >= 1 && mValue < 1000) return UnitSystem.METER;
-      if (kmValue >= 0.001 && kmValue < 1000) return UnitSystem.KILOMETER;
-      return UnitSystem.METER; // 回退到米
-    }
-
-    // 千米级别
-    return UnitSystem.KILOMETER;
-
-  } else {
-    // 英制单位逻辑（原来基于厘米，现在基于米）
-    if (absHeight < 0.0254) return UnitSystem.INCH;
-    if (absHeight < 304.8) return UnitSystem.FOOT;
-    return UnitSystem.MILE;
-  }
-}
-
-// 格式化科学计数法为上标形式
-function formatScientificNotation(value: number, decimals: number = 2): string {
-  const exp = value.toExponential(decimals);
-  const parts = exp.split('e');
-  if (parts.length !== 2) return exp;
-
-  const mantissa = parts[0];
-  let exponent = parseInt(parts[1]);
-
-  // 上标数字映射
-  const superscriptMap: { [key: string]: string } = {
-    '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
-    '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
-    '-': '⁻', '+': '⁺'
-  };
-
-  // 转换指数为上标
-  const expStr = exponent.toString();
-  const superscriptExp = expStr.split('').map(char => superscriptMap[char] || char).join('');
-
-  return `${mantissa}×10${superscriptExp}`;
-}
-
-// 格式化数值显示 - 新的全局规则
-function formatNumber(value: number, maxLength: number = 8): string {
-  // 科学计数法规则：整数部分超过3位(≥1000)或小于0.001时使用科学计数法，4位有效数字
-  if (Math.abs(value) >= 1000 || (Math.abs(value) < 0.001 && value !== 0)) {
-    return formatScientificNotation(value, 3); // 3位小数确保4位有效数字
-  }
-
-  // 常规显示：保持最多4位有效数字
-  const str = value.toString();
-  if (str.length > maxLength) {
-    // 计算需要的小数位数以保持4位有效数字
-    const integerDigits = Math.floor(Math.log10(Math.abs(value))) + 1;
-    const decimals = Math.max(0, 4 - integerDigits);
-    return value.toFixed(decimals);
-  }
-
-  return str;
-}
-
-// 高精度转换高度
-function convertHeightPrecision(heightInM: number, targetUnit: UnitSystem): { value: number, formatted: string } {
-  const conversion = UNIT_CONVERSIONS[targetUnit];
-  const precision = Precision.from(heightInM);
-  const converted = precision.multiply(conversion);
-  const value = converted.toNumber();
-
-  return {
-    value,
-    formatted: formatNumber(value)
-  };
-}
-
-
-// 单位制枚举
-enum Unit {
-  CM = 'cm',
-  FT_IN = 'ft-in'
-}
-
-// 角色类型枚举
-enum CharacterType {
-  GENERIC = 'generic',    // 通用角色（通用的男女、无性别者）
-  CELEBRITY = 'celebrity', // 名人（现实人物、动漫角色、书中虚构人物、神话虚构人物等）
-  OBJECT = 'object',      // 物体（建筑物、山、地球、太阳等自然物体）
-  BIOLOGY = 'biology',    // 生物（动物、植物、微生物、病毒等）
-  UPLOAD = 'upload'       // 上传图片
-}
-
-// 角色媒体信息接口
-interface CharacterMedia {
-  type: 'svg' | 'image'; // 媒体类型
-  url: string; // 主要图片/SVG的URL
-  thumbnailUrl: string; // 缩略图URL（用于角色库展示）
-  svgContent?: string; // SVG内容（仅当type为svg时）
-  originalWidth?: number; // 原始图片宽度
-  originalHeight?: number; // 原始图片高度
-}
-
-// 角色外观信息接口
-interface CharacterAppearance {
-  color: string; // 默认颜色
-  colorCustomizable: boolean; // 是否支持自定义颜色
-  colorProperty?: string; // SVG中需要修改颜色的属性名（如'fill', 'stroke'）
-}
-
-// 角色接口
-interface Character {
-  id: string;
-  name: string;
-  height: number; // 以m为单位
-  width: number; // 以m为单位
-  type: CharacterType;
-  
-  // 媒体相关
-  media: CharacterMedia;
-  
-  // 外观相关
-  appearance: CharacterAppearance;
-  
-  isCustom: boolean;
-  description?: string;
-  isUploadedImage?: boolean; // 是否为用户上传的图片
-}
+import { PRESET_CHARACTERS, type Character, CharacterType } from './Characters';
+import {
+  Unit, Precision, convertHeightSmart, convertHeightSmartImperial, formatNumber, getBestUnit,
+  getImperialGridUnitLabel, convertHeightPrecision, convertHeightForGridImperial, convertHeight
+} from './HeightCalculates';
+import { getContentRect } from './utils/Utils'
 
 // 比较项目接口
 interface ComparisonItem {
@@ -299,569 +35,6 @@ interface StyleSettings {
   spacing: number;
 }
 
-// 图片缓存管理器
-class ImageCacheManager {
-  private cache = new Map<string, HTMLImageElement>();
-  private loadingPromises = new Map<string, Promise<HTMLImageElement>>();
-
-  async preloadImage(url: string): Promise<HTMLImageElement> {
-    if (this.cache.has(url)) {
-      return this.cache.get(url)!;
-    }
-
-    if (this.loadingPromises.has(url)) {
-      return this.loadingPromises.get(url)!;
-    }
-
-    const promise = new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        this.cache.set(url, img);
-        this.loadingPromises.delete(url);
-        resolve(img);
-      };
-      img.onerror = () => {
-        this.loadingPromises.delete(url);
-        reject(new Error(`Failed to load image: ${url}`));
-      };
-      img.src = url;
-    });
-
-    this.loadingPromises.set(url, promise);
-    return promise;
-  }
-
-  getCachedImage(url: string): HTMLImageElement | null {
-    return this.cache.get(url) || null;
-  }
-
-  async preloadCharacterImages(characters: Character[]) {
-    const promises = characters.map(char => {
-      if (char.media.type === 'image') {
-        return Promise.all([
-          this.preloadImage(char.media.url),
-          this.preloadImage(char.media.thumbnailUrl)
-        ]);
-      }
-      return Promise.resolve();
-    });
-    
-    await Promise.allSettled(promises);
-  }
-
-  clearCache() {
-    this.cache.clear();
-    this.loadingPromises.clear();
-  }
-}
-
-// 全局图片缓存实例
-const imageCache = new ImageCacheManager();
-
-// SVG颜色处理函数
-const processSVGColor = (svgContent: string, color?: string, colorProperty: string = 'fill'): string => {
-  if (!color) return svgContent;
-  
-  // 根据颜色属性类型进行替换
-  const regex = new RegExp(`${colorProperty}="[^"]*"`, 'g');
-  return svgContent.replace(regex, `${colorProperty}="${color}"`);
-};
-
-// SVG内联渲染组件
-const InlineSVGRenderer: React.FC<{
-  svgContent: string;
-  color?: string;
-  colorProperty?: string;
-  className?: string;
-  style?: React.CSSProperties;
-}> = ({ svgContent, color, colorProperty = 'fill', className = '', style }) => {
-  const processedSVG = useMemo(() => {
-    return processSVGColor(svgContent, color, colorProperty);
-  }, [svgContent, color, colorProperty]);
-
-  return (
-    <div 
-      className={className}
-      style={style}
-      dangerouslySetInnerHTML={{ __html: processedSVG }}
-    />
-  );
-};
-
-// 角色尺寸计算Hook
-const useCharacterDimensions = (
-  character: Character,
-  containerWidth: number,
-  containerHeight: number
-) => {
-  return useMemo(() => {
-    const characterAspectRatio = character.width / character.height;
-    const containerAspectRatio = containerWidth / containerHeight;
-    
-    let imageWidth: number;
-    let imageHeight: number;
-    let offsetX: number = 0;
-    let offsetY: number = 0;
-    
-    if (characterAspectRatio > containerAspectRatio) {
-      // 角色更宽，以容器宽度为准，垂直居中
-      imageWidth = containerWidth;
-      imageHeight = containerWidth / characterAspectRatio;
-      offsetY = (containerHeight - imageHeight) / 2;
-    } else {
-      // 角色更高或等比，以容器高度为准，水平居中
-      imageHeight = containerHeight;
-      imageWidth = containerHeight * characterAspectRatio;
-      offsetX = (containerWidth - imageWidth) / 2;
-    }
-    
-    return {
-      imageWidth,
-      imageHeight,
-      offsetX,
-      offsetY,
-      scale: imageHeight / containerHeight
-    };
-  }, [character.width, character.height, containerWidth, containerHeight]);
-};
-
-// 角色图片渲染组件
-const CharacterImageRenderer: React.FC<{
-  character: Character;
-  containerWidth: number;
-  containerHeight: number;
-  customColor?: string;
-  className?: string;
-  onLoad?: () => void;
-  onError?: () => void;
-}> = ({ 
-  character, 
-  containerWidth, 
-  containerHeight, 
-  customColor, 
-  className = '', 
-  onLoad, 
-  onError 
-}) => {
-  const dimensions = useCharacterDimensions(character, containerWidth, containerHeight);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-  
-  const finalColor = customColor || character.appearance.color;
-  
-  useEffect(() => {
-    if (character.media.type === 'image') {
-      setIsLoading(true);
-      setHasError(false);
-      
-      imageCache.preloadImage(character.media.url)
-        .then(() => {
-          setIsLoading(false);
-          onLoad?.();
-        })
-        .catch(() => {
-          setIsLoading(false);
-          setHasError(true);
-          onError?.();
-        });
-    } else {
-      setIsLoading(false);
-      onLoad?.();
-    }
-  }, [character.media.url, character.media.type, onLoad, onError]);
-  
-  return (
-    <div 
-      className={`relative ${className}`}
-      style={{
-        width: `${containerWidth}px`,
-        height: `${containerHeight}px`,
-      }}
-    >
-      {/* 加载状态 */}
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      )}
-      
-      {/* 错误状态 */}
-      {hasError && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded">
-          <div className="text-gray-500 text-xs text-center p-2">
-            加载失败<br/>
-            {character.name}
-          </div>
-        </div>
-      )}
-      
-      {/* 图片内容 */}
-      {!isLoading && !hasError && (
-        <div
-          style={{
-            position: 'absolute',
-            left: `${dimensions.offsetX}px`,
-            top: `${dimensions.offsetY}px`,
-            width: `${dimensions.imageWidth}px`,
-            height: `${dimensions.imageHeight}px`,
-          }}
-        >
-          {character.media.type === 'svg' ? (
-            <InlineSVGRenderer 
-              svgContent={character.media.svgContent || ''}
-              color={character.appearance.colorCustomizable ? finalColor : undefined}
-              colorProperty={character.appearance.colorProperty}
-              className="w-full h-full"
-            />
-          ) : (
-            <img
-              src={character.media.url}
-              alt={character.name}
-              className="w-full h-full object-fill"
-              style={{ objectPosition: 'center' }}
-            />
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// 预设角色数据（基于米） - 使用新的数据结构
-const PRESET_CHARACTERS: Character[] = [
-  // 通用角色 - 男性 (SVG)
-  {
-    id: 'generic-male-1',
-    name: '男性1',
-    height: 1.75,
-    width: 0.5,
-    type: CharacterType.GENERIC,
-    media: {
-      type: 'svg',
-      url: '/assets/svg/man1.svg',
-      thumbnailUrl: '/assets/svg/man1.svg',
-      svgContent: `<svg viewBox="0 0 48.452904 127.02859" version="1.1">
-        <g transform="translate(-103.1875,-117.47499)">
-          <path fill="#fda98b" d="m 132.854,113.071 c 0.138,11.329 3.891,19.73 -16.944,29.534 12.402,17.062 24.616,23.367 24.616,23.367 0,0 26.13,-11.762 35.109,-19.545 -4.672,-3.399 -9.549,-5.939 -13.858,-8.967 -8.512,-5.981 -3.49,-19.271 -5.152,-24.178 z"/>
-          <path fill="#fda98b" d="m 137.914,124.95 c 4.695,2.9 10.065,2.016 15.468,0.292 5.962,-1.902 15.645,-19.227 12.01,-40.568 -3.665,-21.515 -27.598,-24.089 -37.094,-9.575 -8.567,13.095 -2.72,42.231 9.616,49.851 z"/>
-          <path fill="#323d4d" d="m 99.297,263.919 c -0.248,4.973 -12.274,248.738 -7.49,249.202 2.569,0.249 19.738,1.532 20.306,-1.058 20.424,-93.05 29.946,-183.941 29.946,-183.941 5.752,36.51 5.76,73.746 11.277,110.3 2.066,13.692 15.453,72.697 17.592,73.153 3.625,0.773 19.88,2.425 19.866,-0.907 -0.089,-20.982 -1.993,-246.749 -1.993,-246.749 z"/>
-        </g>
-      </svg>`
-    },
-    appearance: {
-      color: '#3B82F6',
-      colorCustomizable: true,
-      colorProperty: 'fill'
-    },
-    isCustom: false
-  },
-
-  // 通用角色 - 女性 (SVG)
-  {
-    id: 'generic-female-1',
-    name: '女性1',
-    height: 1.65,
-    width: 0.45,
-    type: CharacterType.GENERIC,
-    media: {
-      type: 'svg',
-      url: '/assets/svg/woman1.svg',
-      thumbnailUrl: '/assets/svg/woman1.svg',
-      svgContent: `<svg viewBox="0 0 43.255074 124.109" version="1.1">
-        <g transform="translate(-106.1815,-118.31049)">
-          <path fill="#fda98b" d="m 130.123,115.234 c 0.125,10.329 3.54,17.99 -15.421,26.89 11.285,15.546 22.415,21.289 22.415,21.289 0,0 23.787,-10.717 31.954,-17.812 -4.254,-3.098 -8.696,-5.406 -12.612,-8.168 -7.746,-5.447 -3.178,-17.552 -4.689,-22.019 z"/>
-          <path fill="#fda98b" d="m 134.736,125.89 c 4.278,2.641 9.163,1.835 14.081,0.266 5.425,-1.732 14.238,-17.507 10.931,-36.944 -3.335,-19.591 -25.124,-21.936 -33.777,-8.725 -7.801,11.924 -2.476,38.443 8.765,45.403 z"/>
-          <path fill="#323d4d" d="m 95.547,254.234 c -0.226,4.531 -11.166,226.672 -6.816,227.103 2.337,0.227 17.955,1.395 18.472,-0.963 18.587,-84.727 27.227,-167.479 27.227,-167.479 5.233,33.227 5.24,67.178 10.264,100.453 1.88,12.467 14.057,66.193 16.009,66.612 3.297,0.704 18.081,2.207 18.069,-0.826 -0.081,-19.101 -1.812,-224.666 -1.812,-224.666 z"/>
-        </g>
-      </svg>`
-    },
-    appearance: {
-      color: '#EC4899',
-      colorCustomizable: true,
-      colorProperty: 'fill'
-    },
-    isCustom: false
-  },
-
-  // 名人 - 马斯克 (图片)
-  {
-    id: 'celebrity-musk',
-    name: '埃隆·马斯克',
-    height: 1.88,
-    width: 0.52,
-    type: CharacterType.CELEBRITY,
-    media: {
-      type: 'image',
-      url: 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=400&h=600&fit=crop&crop=faces',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=200&h=300&fit=crop&crop=faces',
-      originalWidth: 400,
-      originalHeight: 600
-    },
-    appearance: {
-      color: '#1F2937',
-      colorCustomizable: false
-    },
-    isCustom: false,
-    description: '特斯拉和SpaceX CEO'
-  },
-
-  // 名人 - 比尔·盖茨 (图片)
-  {
-    id: 'celebrity-gates',
-    name: '比尔·盖茨',
-    height: 1.77,
-    width: 0.50,
-    type: CharacterType.CELEBRITY,
-    media: {
-      type: 'image',
-      url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=600&fit=crop&crop=faces',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=300&fit=crop&crop=faces',
-      originalWidth: 400,
-      originalHeight: 600
-    },
-    appearance: {
-      color: '#374151',
-      colorCustomizable: false
-    },
-    isCustom: false,
-    description: '微软联合创始人'
-  },
-
-  // 名人 - C罗 (图片)
-  {
-    id: 'celebrity-ronaldo',
-    name: 'C罗',
-    height: 1.87,
-    width: 0.54,
-    type: CharacterType.CELEBRITY,
-    media: {
-      type: 'image',
-      url: 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400&h=600&fit=crop&crop=faces',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=200&h=300&fit=crop&crop=faces',
-      originalWidth: 400,
-      originalHeight: 600
-    },
-    appearance: {
-      color: '#EF4444',
-      colorCustomizable: false
-    },
-    isCustom: false,
-    description: '葡萄牙足球运动员'
-  },
-
-  // 通用角色 - 儿童 (SVG)
-  {
-    id: 'generic-child-1',
-    name: '儿童1',
-    height: 1.2,
-    width: 0.35,
-    type: CharacterType.GENERIC,
-    media: {
-      type: 'svg',
-      url: '/assets/svg/boy1.svg',
-      thumbnailUrl: '/assets/svg/boy1.svg',
-      svgContent: `<svg viewBox="0 0 35 90" version="1.1">
-        <g>
-          <circle fill="#fda98b" cx="17.5" cy="15" r="8"/>
-          <rect fill="#3B82F6" x="12" y="25" width="11" height="20"/>
-          <rect fill="#1E40AF" x="10" y="45" width="15" height="25"/>
-          <rect fill="#fda98b" x="14" y="70" width="3" height="15"/>
-          <rect fill="#fda98b" x="18" y="70" width="3" height="15"/>
-          <rect fill="#000" x="13" y="85" width="5" height="5"/>
-          <rect fill="#000" x="17" y="85" width="5" height="5"/>
-        </g>
-      </svg>`
-    },
-    appearance: {
-      color: '#F59E0B',
-      colorCustomizable: true,
-      colorProperty: 'fill'
-    },
-    isCustom: false
-  },
-
-  // 名人 - 姚明
-  {
-    id: 'celebrity-yao',
-    name: '姚明',
-    height: 2.26,
-    width: 0.6,
-    type: CharacterType.CELEBRITY,
-    media: {
-      type: 'image',
-      url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=600&fit=crop&crop=faces',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&h=300&fit=crop&crop=faces',
-      originalWidth: 400,
-      originalHeight: 600
-    },
-    appearance: {
-      color: '#8B5CF6',
-      colorCustomizable: false
-    },
-    isCustom: false,
-    description: '中国篮球运动员'
-  },
-
-  // 物体 - 埃菲尔铁塔
-  {
-    id: 'object-eiffel',
-    name: '埃菲尔铁塔',
-    height: 324,
-    width: 124,
-    type: CharacterType.OBJECT,
-    media: {
-      type: 'svg',
-      url: '/assets/svg/eiffel-tower.svg',
-      thumbnailUrl: '/assets/svg/eiffel-tower.svg',
-      svgContent: `<svg viewBox="0 0 124 324" version="1.1">
-        <g>
-          <polygon fill="#6B7280" points="62,10 50,50 74,50"/>
-          <polygon fill="#6B7280" points="50,50 30,150 94,150"/>
-          <polygon fill="#6B7280" points="30,150 10,250 114,250"/>
-          <polygon fill="#6B7280" points="10,250 0,324 124,324"/>
-          <rect fill="#4B5563" x="58" y="0" width="8" height="324"/>
-        </g>
-      </svg>`
-    },
-    appearance: {
-      color: '#6B7280',
-      colorCustomizable: true,
-      colorProperty: 'fill'
-    },
-    isCustom: false,
-    description: '法国巴黎著名地标'
-  },
-
-  // 生物 - 长颈鹿
-  {
-    id: 'bio-giraffe',
-    name: '长颈鹿',
-    height: 5.5,
-    width: 2,
-    type: CharacterType.BIOLOGY,
-    media: {
-      type: 'svg',
-      url: '/assets/svg/giraffe.svg',
-      thumbnailUrl: '/assets/svg/giraffe.svg',
-      svgContent: `<svg viewBox="0 0 100 275" version="1.1">
-        <g>
-          <ellipse fill="#D97706" cx="50" cy="20" rx="8" ry="6"/>
-          <rect fill="#D97706" x="48" y="26" width="4" height="120"/>
-          <ellipse fill="#D97706" cx="50" cy="150" rx="15" ry="25"/>
-          <rect fill="#D97706" x="35" y="175" width="6" height="80"/>
-          <rect fill="#D97706" x="45" y="175" width="6" height="80"/>
-          <rect fill="#D97706" x="55" y="175" width="6" height="80"/>
-          <rect fill="#D97706" x="65" y="175" width="6" height="80"/>
-          <circle fill="#8B4513" cx="47" cy="18" r="1"/>
-          <circle fill="#8B4513" cx="53" cy="18" r="1"/>
-        </g>
-      </svg>`
-    },
-    appearance: {
-      color: '#D97706',
-      colorCustomizable: true,
-      colorProperty: 'fill'
-    },
-    isCustom: false,
-    description: '世界上最高的陆地动物'
-  }
-  
-  // 注意：其他旧格式角色数据已迁移，仅保留上述测试角色
-];
-
-// 单位转换函数（保持向后兼容）
-const convertHeight = (m: number, unit: Unit): string => {
-  switch (unit) {
-    case Unit.CM:
-      return `${(m * 100).toFixed(1)}cm`;
-    case Unit.FT_IN:
-      const totalInches = (m * 100) / 2.54;
-      const feet = Math.floor(totalInches / 12);
-      const inches = totalInches % 12;
-      return `${feet}' ${inches.toFixed(1)}"`;
-    default:
-      return `${(m * 100).toFixed(1)}cm`;
-  }
-};
-
-// 新的智能高度转换函数
-const convertHeightSmart = (m: number, preferMetric: boolean = true): string => {
-  const bestUnit = getBestUnit(m, preferMetric);
-  const result = convertHeightPrecision(m, bestUnit);
-  return `${result.formatted}${bestUnit}`;
-};
-
-// 智能英制单位显示函数 - 新的统一规则
-const convertHeightSmartImperial = (m: number): string => {
-  const totalInches = (m * 100) / 2.54;
-  const totalFeet = totalInches / 12;
-
-  // 小于等于1英尺：用英寸单位（必要时用科学计数法）
-  if (totalFeet <= 1) {
-    const inchesValue = totalInches;
-    if (Math.abs(inchesValue) >= 1000 || (Math.abs(inchesValue) < 0.001 && inchesValue !== 0)) {
-      return `${formatScientificNotation(inchesValue, 3)}in`;
-    }
-    return `${formatNumber(inchesValue)}in`;
-  }
-
-  // 1英尺到10000英尺：用英尺英寸格式
-  if (totalFeet < 10000) {
-    const feet = Math.floor(totalInches / 12);
-    const inches = totalInches % 12;
-    return `${feet}' ${inches.toFixed(1)}"`;
-  }
-
-  // 大于等于10000英尺：用英里单位（必要时用科学计数法）
-  const miles = totalFeet / 5280;
-  if (Math.abs(miles) >= 1000 || (Math.abs(miles) < 0.001 && miles !== 0)) {
-    return `${formatScientificNotation(miles, 3)}mi`;
-  }
-  return `${formatNumber(miles)}mi`;
-};
-
-// 获取英制网格标题的单位显示
-const getImperialGridUnitLabel = (maxHeightInComparison: number): string => {
-  const maxTotalFeet = ((maxHeightInComparison * 100) / 2.54) / 12;
-
-  if (maxTotalFeet <= 1) {
-    return "in"; // 英寸
-  } else if (maxTotalFeet < 10000) {
-    return "ft/in"; // 英尺英寸
-  } else {
-    return "mi"; // 英里
-  }
-};
-
-// 网格刻度线专用的英制显示函数 - 基于最大高度判断显示方式
-const convertHeightForGridImperial = (m: number, maxHeightInComparison: number): string => {
-  const maxTotalFeet = ((maxHeightInComparison * 100) / 2.54) / 12;
-  const totalInches = (m * 100) / 2.54;
-  const totalFeet = totalInches / 12;
-
-  // 根据最大高度确定显示方式
-  if (maxTotalFeet <= 1) {
-    // 最大高度小于等于1英尺：统一用英寸
-    const inchesValue = totalInches;
-    if (Math.abs(inchesValue) >= 1000 || (Math.abs(inchesValue) < 0.001 && inchesValue !== 0)) {
-      return formatScientificNotation(inchesValue, 3);
-    }
-    return formatNumber(inchesValue);
-  } else if (maxTotalFeet < 10000) {
-    // 最大高度在1-10000英尺：统一用英尺英寸格式
-    const feet = Math.floor(totalInches / 12);
-    const inches = totalInches % 12;
-    return `${feet}' ${inches.toFixed(1)}"`;
-  } else {
-    // 最大高度大于等于10000英尺：统一用英里
-    const miles = totalFeet / 5280;
-    if (Math.abs(miles) >= 1000 || (Math.abs(miles) < 0.001 && miles !== 0)) {
-      return formatScientificNotation(miles, 3);
-    }
-    return formatNumber(miles);
-  }
-};
-
 // 获取最大高度用于动态单位制选择
 const getMaxHeightInComparison = (items: ComparisonItem[]): number => {
   if (items.length === 0) return 2; // 默认值（米）
@@ -882,22 +55,6 @@ interface DragState {
   draggedElement: HTMLElement | null; // 被拖拽元素的引用
   preventNextClick?: boolean;
 }
-
-// 获取元素内容区域尺寸的工具函数
-const getContentRect = (element: HTMLElement) => {
-  const style = window.getComputedStyle(element);
-  const paddingTop = parseFloat(style.paddingTop);
-  const paddingBottom = parseFloat(style.paddingBottom);
-  const paddingLeft = parseFloat(style.paddingLeft);
-  const paddingRight = parseFloat(style.paddingRight);
-
-  return {
-    width: element.clientWidth - paddingLeft - paddingRight,
-    height: element.clientHeight - paddingTop - paddingBottom,
-    x: element.clientLeft + paddingLeft,
-    y: element.clientTop + paddingTop
-  };
-};
 
 // 主组件
 const HeightCompareTool: React.FC = () => {
@@ -929,6 +86,13 @@ const HeightCompareTool: React.FC = () => {
   const resetZoom = () => {
     setPixelsPerMState(1); // 重置为默认值1，这会触发自动计算
   };
+
+  // 角色数量为0时，重置缩放
+  useEffect(() => {
+    if (comparisonItems.length == 0) {
+      resetZoom();
+    }
+  }, [comparisonItems.length])
 
   // 计算图表展示区的像素高度
   useEffect(() => {
@@ -965,12 +129,13 @@ const HeightCompareTool: React.FC = () => {
     }
     // 否则使用自动计算的值，使用高精度计算
     const maxHeight = getMaxHeightInComparison(comparisonItems);
-    const availableHeight = chartAreaHeightPix - 70;
+    const availablePixHeight = chartAreaHeightPix - 70;
 
     // 使用高精度计算避免极端情况下的精度损失
-    const heightPrecision = Precision.from(availableHeight);
+    const pixHeightPrecision = Precision.from(availablePixHeight);
     const maxHeightPrecision = Precision.from(maxHeight);
-    const ratio = heightPrecision.divide(maxHeightPrecision);
+    const ratio = pixHeightPrecision.divide(maxHeightPrecision);
+    console.log(`计算比例：availableHeight=${availablePixHeight}，maxHeight=${maxHeight}，ratio=${ratio}`);
 
     return ratio.toNumber();
   }, [chartAreaHeightPix, comparisonItems, pixelsPerMState]);
@@ -979,7 +144,7 @@ const HeightCompareTool: React.FC = () => {
     if (comparisonItems.length == 0) {
       return;
     }
-    if (zoomStateRef.current.isZooming || Date.now() - zoomStateRef.current.zoomStart < 100) {
+    if (zoomStateRef.current.isZooming || Date.now() - zoomStateRef.current.zoomStart < 50) {
       return;
     }
 
@@ -992,15 +157,38 @@ const HeightCompareTool: React.FC = () => {
     // 记录中心点位置
     const scrollLeftRatio = (container.scrollLeft + container.clientWidth / 2) / container.scrollWidth;
 
-    //console.log(`handleWheel方法中，开始缩放，scrollLeft：${container.scrollLeft}，scrollWidth：${container.scrollWidth}，clientWidth：${container.clientWidth}，scrollLeftRatio：${scrollLeftRatio}`);
+    console.log(`handleZoom方法中，开始缩放，scrollLeft：${container.scrollLeft}，scrollWidth：${container.scrollWidth}，clientWidth：${container.clientWidth}，scrollLeftRatio：${scrollLeftRatio}`);
 
     zoomStateRef.current.scrollLeftRatio = scrollLeftRatio;
 
+    // 清除之前的定时器
+    if (zoomIndicatorTimerRef.current) {
+      clearTimeout(zoomIndicatorTimerRef.current);
+    }
+
+    // 显示缩放指示器
+    setZoomIndicator({
+      show: true,
+      type: zoomDelta > 0 ? 'in' : 'out',
+      exiting: false
+    });
+
     // 根据滚轮方向调整缩放比例
     const currentScale = pixelsPerM;
-    const newScale = currentScale + (currentScale * zoomDelta); // 添加最小缩放限制
+    const newScale = currentScale + (currentScale * zoomDelta);
+    console.log(`handleZoom方法中，当前缩放比例：${currentScale}，新缩放比例：${newScale}`);
 
     setPixelsPerMState(newScale);
+
+    // 重新设置定时器，800ms后开始淡出
+    zoomIndicatorTimerRef.current = setTimeout(() => {
+      setZoomIndicator(prev => ({ ...prev, exiting: true }));
+      // 再等待200ms淡出动画完成后隐藏
+      setTimeout(() => {
+        setZoomIndicator({ show: false, type: 'in', exiting: false });
+      }, 200);
+      zoomIndicatorTimerRef.current = null;
+    }, 800);
   }, [pixelsPerM, comparisonItems]);
 
   // 添加缩放事件处理
@@ -1011,6 +199,7 @@ const HeightCompareTool: React.FC = () => {
     const handleWheel = (e: WheelEvent) => {
       // 检查是否按住了 Ctrl 键
       if (e.ctrlKey) {
+        console.log('Ctrl 键被按住，开始缩放');
         e.preventDefault(); // 阻止默认的缩放行为
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
         handleZoom(delta);
@@ -1065,8 +254,6 @@ const HeightCompareTool: React.FC = () => {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // const isZooming = useRef(false);
-
   // 添加横向滚动状态
   const [horizontalScrollState, setHorizontalScrollState] = useState({
     isDragging: false,
@@ -1090,6 +277,171 @@ const HeightCompareTool: React.FC = () => {
     zoomStart: 0
   })
 
+  // 缩放指示器状态
+  const [zoomIndicator, setZoomIndicator] = useState({
+    show: false,
+    type: 'in' as 'in' | 'out', // 'in' 表示放大，'out' 表示缩小
+    exiting: false // 是否正在退出（淡出）
+  })
+
+  // 缩放指示器定时器引用
+  const zoomIndicatorTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // 导出功能状态
+  const [showExportDropdown, setShowExportDropdown] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const exportButtonRef = useRef<HTMLButtonElement>(null)
+
+  // 图表标题状态
+  const [chartTitle, setChartTitle] = useState('身高比较')
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
+  const titleInputRef = useRef<HTMLInputElement>(null)
+
+  // 导出图表为图片
+  const exportChart = useCallback(async (format: 'png' | 'jpg' | 'webp' = 'png') => {
+    if (!chartAreaRef.current || comparisonItems.length === 0) {
+      console.warn('图表区域未找到或没有角色数据');
+      return;
+    }
+
+    setIsExporting(true);
+
+    const element = chartAreaRef.current;
+
+    try {
+
+      // 使用html2canvas进行截图，手动扩展捕获区域
+      const canvas = await html2canvas(element, {
+        backgroundColor: styleSettings.backgroundColor,
+        useCORS: true,
+        scale: 2,
+        x: -20,  // 向左扩展20px
+        y: -60,  // 向上扩展60px（包含标题）
+        width: element.offsetWidth + 40,   // 左右各扩展20px
+        height: element.offsetHeight + 100, // 上下扩展100px（上60px+下40px）
+        // 忽略特定元素
+        ignoreElements: (element) => {
+          return element.id == 'zoom-controlls' ||
+            element.id == 'characters-container-scrollbar';
+        },
+      });
+
+      // 下载图片
+      downloadCanvas(canvas, format, chartTitle);
+
+    } catch (error) {
+      console.error('导出失败:', error);
+
+      // 错误处理：提供用户友好的提示
+      const errorMessage = `图片导出失败，可能的原因：
+• 图片资源加载问题
+• 浏览器安全限制
+
+建议解决方案：
+1. 刷新页面后重试
+2. 使用浏览器截图功能：
+   - Chrome: F12 → Ctrl+Shift+P → 输入"screenshot"
+   - 或使用系统截图工具（Win+Shift+S）`;
+
+      alert(errorMessage);
+    } finally {
+      setIsExporting(false);
+      setShowExportDropdown(false);
+    }
+  }, [comparisonItems, styleSettings.backgroundColor, chartTitle]);
+
+  // 下载Canvas为图片
+  const downloadCanvas = (canvas: HTMLCanvasElement, format: 'png' | 'jpg' | 'webp', title: string) => {
+    try {
+      const link = document.createElement('a');
+      link.download = title;
+
+      // 根据格式设置不同的质量参数
+      let dataUrl: string;
+      if (format === 'jpg') {
+        dataUrl = canvas.toDataURL('image/jpeg', 0.92); // 高质量JPEG
+      } else if (format === 'webp') {
+        dataUrl = canvas.toDataURL('image/webp', 0.95); // 高质量WebP
+      } else {
+        dataUrl = canvas.toDataURL('image/png'); // PNG无损
+      }
+
+      link.href = dataUrl;
+
+      // 触发下载
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // 显示成功提示
+      console.log(`图片已导出为 ${format.toUpperCase()} 格式`);
+
+    } catch (error) {
+      console.error('下载失败:', error);
+      alert('文件下载失败，请检查浏览器下载设置');
+    }
+  };
+
+  // 处理导出下拉菜单
+  const handleExportClick = useCallback(() => {
+    setShowExportDropdown(!showExportDropdown);
+  }, [showExportDropdown]);
+
+  // 处理导出下拉菜单的外部点击
+  useEffect(() => {
+    if (!showExportDropdown) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+
+      // 如果点击的不是导出按钮及其下拉菜单，则关闭下拉菜单
+      if (exportButtonRef.current && !exportButtonRef.current.contains(target)) {
+        setShowExportDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showExportDropdown]);
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault();
+      setIsEditingTitle(false);
+    }
+  };
+
+  // 当开始编辑标题时，自动聚焦输入框
+  useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
+
+  // 处理标题编辑时的全局点击事件
+  useEffect(() => {
+    if (!isEditingTitle) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+
+      // 如果点击的不是标题输入框，则保存并退出编辑
+      if (titleInputRef.current && !titleInputRef.current.contains(target)) {
+        setIsEditingTitle(false);
+      }
+    };
+
+    // 添加全局点击监听器
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isEditingTitle]);
 
   // 处理点击事件
   useEffect(() => {
@@ -1526,25 +878,31 @@ const HeightCompareTool: React.FC = () => {
     aspectRatio: number;
   }) => {
     const { imageUrl, heightInM, widthInM, aspectRatio } = imageData;
-    
+
     // 计算宽度：如果没有指定宽度，则根据高度和宽高比计算
     const calculatedWidthInM = widthInM || (heightInM * aspectRatio);
-    
+
     // 创建新角色
     const newCharacter: Character = {
       id: `upload-${Date.now()}-${Math.random()}`,
       name: '上传角色',
       height: heightInM,
-      width: calculatedWidthInM,
+      // width: calculatedWidthInM,
       type: CharacterType.UPLOAD,
+      // 媒体相关字段 - 扁平化
+      mediaType: 'image',
+      mediaUrl: imageUrl,
+      thumbnailUrl: imageUrl,
+      // 外观相关字段 - 扁平化
       color: '#10B981',
+      colorCustomizable: false,
       isCustom: true,
-      imageUrl: imageUrl
+      isUploadedImage: true
     };
 
     // 添加到比较列表
     addToComparison(newCharacter);
-    
+
     // 关闭上传弹窗
     setShowImageUploadModal(false);
   };
@@ -1656,6 +1014,12 @@ const HeightCompareTool: React.FC = () => {
         scrollWidth: container.scrollWidth,
         clientWidth: container.clientWidth
       };
+      setScrollbarState(prev => {
+        return {
+          ...prev,
+          ...newState
+        }
+      });
       zoomStateRef.current.isZooming = false;
     } else {
       newState = {
@@ -1663,13 +1027,11 @@ const HeightCompareTool: React.FC = () => {
         scrollWidth: container.scrollWidth,
         clientWidth: container.clientWidth
       };
+      setScrollbarState(prev => ({
+        ...prev,
+        ...newState
+      }));
     }
-    setScrollbarState(prev => ({
-      ...prev,
-      ...newState
-    }));
-
-    zoomStateRef.current.isZooming = false;
   };
 
   // 监听容器滚动和大小变化
@@ -1775,7 +1137,7 @@ const HeightCompareTool: React.FC = () => {
     }
   }, [scrollbarState.isDragging, handleScrollbarDragMove, handleScrollbarDragEnd]);
 
-  // 计算滚动条thumb的位置和大小
+  // // 计算滚动条thumb的位置和大小
   const getScrollbarThumbStyle = useCallback(() => {
     const { scrollLeft, scrollWidth, clientWidth } = scrollbarState;
 
@@ -1794,6 +1156,15 @@ const HeightCompareTool: React.FC = () => {
       display: 'block'
     };
   }, [scrollbarState]);
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (zoomIndicatorTimerRef.current) {
+        clearTimeout(zoomIndicatorTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <>
@@ -2047,41 +1418,27 @@ const HeightCompareTool: React.FC = () => {
                         {/* 正方形容器 */}
                         <div className="aspect-square w-full flex items-center justify-center bg-gray-50 rounded overflow-hidden">
                           {/* 角色缩略图 - 保持原始比例 */}
-                          <div
-                            className={`w-12 h-16 rounded flex items-center justify-center text-white text-sm font-bold hover:ring-2 hover:ring-gray-300 hover:ring-offset-1`}
-                            style={{
-                              backgroundColor: character.color
-                            }}
-                          >
-                            {character.type === CharacterType.GENERIC ? (
-                              character.svgIcon ? (
-                                // 这里可以根据 svgIcon 显示不同的图标
-                                character.name.includes('男性') ? '👨' :
-                                  character.name.includes('女性') ? '👩' :
-                                    character.name.includes('中性') ? '🧑' :
-                                      character.name.includes('儿童') ? '🧒' : '👤'
-                              ) : '👤'
-                            ) :
-                              character.type === CharacterType.CELEBRITY ? (
-                                character.name.includes('动漫') || character.name.includes('柯南') || character.name.includes('路飞') ? '👥' :
-                                  character.name.includes('神话') || character.name.includes('宙斯') ? '⚡' : '⭐'
-                              ) :
-                                character.type === CharacterType.OBJECT ? (
-                                  character.name.includes('塔') || character.name.includes('建筑') ? '🏗️' :
-                                    character.name.includes('山') || character.name.includes('峰') ? '🏔️' :
-                                      character.name.includes('地球') ? '🌍' :
-                                        character.name.includes('太阳') ? '☀️' : '🏢'
-                                ) :
-                                  character.type === CharacterType.BIOLOGY ? (
-                                    character.name.includes('树') || character.name.includes('竹') ? '🌳' :
-                                      character.name.includes('鲸') ? '🐋' :
-                                        character.name.includes('长颈鹿') ? '🦒' :
-                                          character.name.includes('大象') ? '🐘' :
-                                            character.name.includes('蚂蚁') ? '🐜' :
-                                              character.name.includes('细菌') || character.name.includes('病毒') ? '🦠' : '🐾'
-                                  ) :
-                                    character.type === CharacterType.UPLOAD ? '📷' : '○'}
-                          </div>
+                          {character.thumbnailUrl ? (
+                            <img
+                              src={character.thumbnailUrl}
+                              alt={character.name}
+                              className="w-full h-full object-contain hover:scale-105 transition-transform duration-200"
+                            />
+                          ) : (
+                            // fallback 到表情符号图标
+                            <div
+                              className={`w-12 h-16 rounded flex items-center justify-center text-white text-sm font-bold hover:ring-2 hover:ring-gray-300 hover:ring-offset-1`}
+                              style={{
+                                backgroundColor: character.color || 'transparent'
+                              }}
+                            >
+                              {character.type === CharacterType.GENERIC ? '👤' :
+                                character.type === CharacterType.CELEBRITY ? '⭐' :
+                                  character.type === CharacterType.OBJECT ? '🏢' :
+                                    character.type === CharacterType.BIOLOGY ? '🐾' :
+                                      character.type === CharacterType.UPLOAD ? '📷' : '○'}
+                            </div>
+                          )}
                         </div>
 
                         {/* 悬浮提示 */}
@@ -2113,16 +1470,16 @@ const HeightCompareTool: React.FC = () => {
               <div className="px-4 pt-4 pb-6 bg-white border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <h1 className="text-xl font-bold">身高比较工具</h1>
+                    <h1 className="text-xl font-bold">身高比较</h1>
                     <div className="text-sm text-gray-600">
                       {comparisonItems.length} 个对象
                     </div>
-                    <div className="text-sm text-gray-600">
+                    {/* <div className="text-sm text-gray-600">
                       pixelsPerM: {formatNumber(pixelsPerM, 10)}
                     </div>
                     <div className="text-sm text-gray-600">
                       chartAreaHeightPix: {chartAreaHeightPix}
-                    </div>
+                    </div> */}
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1">
@@ -2169,16 +1526,75 @@ const HeightCompareTool: React.FC = () => {
                     >
                       <Grid className="w-4 h-4" />
                     </button>
-                    <button
+                    {/* <button
                       onClick={() => setStyleSettings({ ...styleSettings, labels: !styleSettings.labels })}
                       className={`p-2 rounded ${styleSettings.labels ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
                       title="标签"
                     >
                       {styleSettings.labels ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                    </button>
-                    <button className="p-2 rounded bg-gray-100 text-gray-600 hover:bg-gray-200" title="导出">
-                      <Download className="w-4 h-4" />
-                    </button>
+                    </button> */}
+
+                    {/* 导出按钮 - 带下拉菜单 */}
+                    <div className="relative" ref={exportButtonRef}>
+                      <button
+                        onClick={handleExportClick}
+                        className={`p-2 rounded transition-colors ${comparisonItems.length === 0
+                          ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                          : showExportDropdown
+                            ? 'bg-blue-100 text-blue-600'
+                            : 'bg-gray-100 text-gray-600 hover:bg-blue-100 hover:text-blue-600'
+                          }`}
+                        title={comparisonItems.length === 0 ? '请先添加角色' : '导出图片'}
+                        disabled={comparisonItems.length === 0 || isExporting}
+                      >
+                        {isExporting ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                        ) : (
+                          <Download className="w-4 h-4" />
+                        )}
+                      </button>
+
+                      {/* 导出格式下拉菜单 */}
+                      {showExportDropdown && comparisonItems.length > 0 && (
+                        <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[1003] min-w-[160px]">
+                          <div className="py-1">
+                            <button
+                              onClick={() => exportChart('png')}
+                              disabled={isExporting}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                            >
+                              <span className="mr-3">🖼️</span>
+                              <div>
+                                <div className="font-medium">PNG</div>
+                                <div className="text-xs text-gray-500">高质量，透明背景</div>
+                              </div>
+                            </button>
+                            <button
+                              onClick={() => exportChart('jpg')}
+                              disabled={isExporting}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                            >
+                              <span className="mr-3">📷</span>
+                              <div>
+                                <div className="font-medium">JPG</div>
+                                <div className="text-xs text-gray-500">文件较小，分享方便</div>
+                              </div>
+                            </button>
+                            <button
+                              onClick={() => exportChart('webp')}
+                              disabled={isExporting}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                            >
+                              <span className="mr-3">🌐</span>
+                              <div>
+                                <div className="font-medium">WebP</div>
+                                <div className="text-xs text-gray-500">现代格式，高压缩</div>
+                              </div>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     <button className="p-2 rounded bg-gray-100 text-gray-600 hover:bg-gray-200" title="分享">
                       <Share2 className="w-4 h-4" />
                     </button>
@@ -2188,9 +1604,33 @@ const HeightCompareTool: React.FC = () => {
 
               {/* 图表区域 */}
               <div className="w-full flex-1 p-4 thin-scrollbar relative" style={{ backgroundColor: styleSettings.backgroundColor, height: `calc(100% - 16px)` }}>
-                <div ref={chartAreaRef} className="relative px-20 h-full flex items-end justify-center">
+                <div ref={chartAreaRef} className="relative px-20 w-full h-full flex items-end justify-center">
+                  {/* 图表标题 - 可编辑 */}
+                  <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 z-[1001] cursor-text">
+                    {isEditingTitle ? (
+                      <input
+                        ref={titleInputRef}
+                        type="text"
+                        value={chartTitle}
+                        onChange={(e) => setChartTitle(e.target.value)}
+                        onBlur={() => setIsEditingTitle(false)}
+                        onKeyDown={handleTitleKeyDown}
+                        className="text-lg font-medium text-gray-800 bg-white/90 border border-gray-300 rounded px-3 py-1 text-center min-w-[200px] focus:outline-none focus:ring-1 focus:ring-gray-300 focus:border-transparent shadow-sm"
+                        placeholder="输入图表标题"
+                      />
+                    ) : (
+                      <h2
+                        onClick={() => setIsEditingTitle(true)}
+                        className="text-lg font-medium text-gray-800 bg-white/80 backdrop-blur-sm rounded px-3 py-1 hover:bg-white/90 transition-colors shadow-sm border border-transparent hover:border-gray-200"
+                        title="点击编辑标题"
+                      >
+                        {chartTitle}
+                      </h2>
+                    )}
+                  </div>
+
                   {/* 缩放控件 */}
-                  <div className="absolute -top-2 right-[5rem] z-[1002] flex flex-col gap-1">
+                  <div id="zoom-controlls" className="absolute -top-2 right-[5rem] z-[1002] flex flex-col gap-1">
                     <div className="relative group">
                       <button
                         onClick={() => handleZoom(0.2)}
@@ -2222,21 +1662,34 @@ const HeightCompareTool: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* 缩放指示器 - 显示在图表中心 */}
+                  {zoomIndicator.show && (
+                    <div className={`absolute inset-0 flex items-center justify-center pointer-events-none z-[1004] transition-opacity duration-200 ${zoomIndicator.exiting ? 'opacity-0' : 'opacity-100'
+                      }`}>
+                      <div className="bg-white/80 text-gray-700 rounded-full p-2 shadow-lg border border-gray-200">
+                        {zoomIndicator.type === 'in' ? (
+                          <ZoomIn className="w-6 h-6" />
+                        ) : (
+                          <ZoomOut className="w-6 h-6" />
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* 网格线 */}
                   {styleSettings.gridLines && (() => {
                     // 计算最大高度用于确定统一的单位制
                     const maxHeightInComparison = getMaxHeightInComparison(comparisonItems);
                     const unifiedMetricUnit = getBestUnit(maxHeightInComparison, true);
-                    const unifiedImperialUnit = getBestUnit(maxHeightInComparison, false);
 
                     return (
                       <div className="absolute inset-0 pointer-events-none">
                         {/* 动态单位标签 */}
                         <div className="absolute top-0 left-0 w-full">
-                          <span className="absolute left-4 -top-8 text-sm font-bold text-gray-700">
+                          <span className="absolute left-2 -top-9 text-sm font-bold text-gray-700">
                             公制 ({unifiedMetricUnit})
                           </span>
-                          <span className="absolute right-4 -top-8 text-sm font-bold text-gray-700">
+                          <span className="absolute right-2 -top-9 text-sm font-bold text-gray-700">
                             英制 ({getImperialGridUnitLabel(maxHeightInComparison)})
                           </span>
                         </div>
@@ -2262,10 +1715,10 @@ const HeightCompareTool: React.FC = () => {
                             >
                               {styleSettings.labels && (
                                 <>
-                                  <span className="absolute left-2 -top-2 text-xs text-gray-600">
+                                  <span className="absolute left-2 top-0 -translate-y-1/2 text-xs text-gray-600">
                                     {metricResult.formatted}
                                   </span>
-                                  <span className="absolute right-2 -top-2 text-xs text-gray-600">
+                                  <span className="absolute right-2 top-0 -translate-y-1/2 text-xs text-gray-600">
                                     {imperialDisplay}
                                   </span>
                                 </>
@@ -2354,7 +1807,7 @@ const HeightCompareTool: React.FC = () => {
 
                     {/* 自定义横向滚动条 */}
                     {comparisonItems.length > 0 && scrollbarState.scrollWidth > scrollbarState.clientWidth && (
-                      <div className="absolute bottom-[-7px] left-0 h-[6px] bg-gray-100 rounded-full mx-2 mt-2">
+                      <div id='characters-container-scrollbar' className="absolute bottom-[-7px] left-0 h-[6px] bg-gray-100 rounded-full mx-2 mt-2">
                         {/* 滚动条轨道 */}
                         <div className="absolute inset-0 bg-gray-200 rounded-full"></div>
                         {/* 滚动条滑块 */}
@@ -2537,6 +1990,8 @@ const HeightCompareTool: React.FC = () => {
             })()}
           </div>
         )}
+
+        {/* 导出格式选择弹窗已移除，改为下拉菜单 */}
 
         {/* 图片上传弹窗 */}
         <ImageUploadModal

@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { X, Upload, Crop, Check, ZoomIn, ZoomOut } from 'lucide-react';
 import ReactCrop, { type Crop as CropType, centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
-import { UnitSystem, UNIT_CONVERSIONS } from './HeightCompareTool';
+import { UnitSystem, UNIT_CONVERSIONS } from './HeightCalculates';
 
 interface CropArea {
   x: number;
@@ -69,7 +69,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
   const [width, setWidth] = useState<string>('');
   const [heightUnit, setHeightUnit] = useState<UnitSystem>(UnitSystem.METER);
   const [widthUnit, setWidthUnit] = useState<UnitSystem>(UnitSystem.METER);
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
@@ -122,10 +122,10 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
         width: (crop.width / 100) * image.width,
         height: (crop.height / 100) * image.height,
       };
-      
+
       // 生成裁剪后的图片
       const croppedImageUrl = await getCroppedImg(image, cropPixels, scale);
-      
+
       // 计算尺寸
       const heightInM = convertToMeters(parseFloat(height), heightUnit);
       const widthInM = width ? convertToMeters(parseFloat(width), widthUnit) : undefined;
@@ -145,7 +145,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
       setWidth('');
       setCrop(undefined);
       setScale(1);
-      
+
     } catch (error) {
       console.error('Error cropping image:', error);
       alert('图片裁剪失败，请重试');
@@ -171,7 +171,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
     if (imageUrl) {
       URL.revokeObjectURL(imageUrl);
     }
-    
+
     // 重置状态
     setSelectedFile(null);
     setImageUrl('');
@@ -179,7 +179,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
     setWidth('');
     setCrop(undefined);
     setScale(1);
-    
+
     onClose();
   }, [imageUrl, onClose]);
 
@@ -199,7 +199,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
           </button>
         </div>
 
-        <div className="p-4 flex gap-6 flex-1 min-h-0">
+        <div className="p-4 flex gap-6 flex-1">
           {/* 左侧：图片裁剪区域 */}
           <div className="flex-1 flex flex-col">
             {!imageUrl ? (
@@ -241,7 +241,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
                       ref={imgRef}
                       src={imageUrl}
                       alt="Crop me"
-                      style={{ 
+                      style={{
                         transform: `scale(${scale})`,
                         maxWidth: '100%',
                         maxHeight: '100%',
@@ -254,7 +254,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
                     />
                   </ReactCrop>
                 </div>
-                
+
                 {/* 缩放控制 */}
                 <div className="mt-4 bg-white rounded-lg p-3 border flex-shrink-0">
                   <div className="flex items-center gap-3">
@@ -281,7 +281,7 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ isOpen, onClose, on
           <div className="w-80 border-l pl-6 flex flex-col">
             <div className="flex-1">
               <h3 className="font-semibold mb-4">尺寸设置</h3>
-              
+
               {/* 高度设置 */}
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2">高度 *</label>
