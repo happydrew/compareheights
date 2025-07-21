@@ -7,8 +7,8 @@ import html2canvas from 'html2canvas';
 import { CharacterDisplay } from './CharacterDisplay';
 import { ImageUploadModal } from './ImageUploadModal';
 import 'simplebar-react/dist/simplebar.min.css';
-import { type Character, CharacterType } from './Characters';
-import { queryCharacters, type QueryCharactersResponse } from './api/characterService';
+import { type Character, CharacterType } from '../lib/characters';
+import { queryCharacters, type QueryCharactersResponse } from '@lib/characters';
 import {
   Unit, Precision, convertHeightSmart, convertHeightSmartImperial, formatNumber, getBestUnit,
   getImperialGridUnitLabel, convertHeightPrecision, convertHeightForGridImperial, convertHeight
@@ -106,7 +106,7 @@ const HeightCompareTool: React.FC = () => {
         setCharactersError(response.message || 'Failed to load characters');
       }
     } catch (error) {
-      setCharactersError('Failed to load characters from API');
+      setCharactersError('Failed to load characters');
       console.error('Error loading characters:', error);
     } finally {
       setIsLoadingCharacters(false);
@@ -873,11 +873,6 @@ Suggested solutions:
     };
   }, [leftPanelDragState]);
 
-
-  // Characters已经通过API过滤，直接使用
-  const filteredCharacters = characters;
-
-
   const addToComparison = (character: Character) => {
     // Calculate count of same original characters for generating sequence numbers
     let maxSimilarNameIndex: number = -1;
@@ -903,9 +898,8 @@ Suggested solutions:
     // Create deep copy of character to avoid referencing same object
     const newCharacter: Character = {
       ...character,
-      id: `${character.id}-${Date.now()}-${Math.random()}`, // Ensure unique ID
-      name: maxSimilarNameIndex == -1 ? character.name : `${character.name} ${maxSimilarNameIndex + 1}`,
-      isCustom: true // Mark as custom, allow editing
+      id: `custom-${character.id}-${Date.now()}-${Math.random()}`, // Ensure unique ID with custom prefix
+      name: maxSimilarNameIndex == -1 ? character.name : `${character.name} ${maxSimilarNameIndex + 1}`
     };
 
     const newItem: ComparisonItem = {
@@ -962,9 +956,6 @@ Suggested solutions:
   }) => {
     const { imageUrl, heightInM, widthInM, aspectRatio } = imageData;
 
-    // Calculate width: if no width specified, calculate based on height and aspect ratio
-    const calculatedWidthInM = widthInM || (heightInM * aspectRatio);
-
     // Create new character
     const newCharacter: Character = {
       id: `upload-${Date.now()}-${Math.random()}`,
@@ -978,9 +969,7 @@ Suggested solutions:
       thumbnailUrl: imageUrl,
       // Appearance related fields - flattened
       color: '#10B981',
-      colorCustomizable: false,
-      isCustom: true,
-      isUploadedImage: true
+      colorCustomizable: false
     };
 
     // Add to comparison list
@@ -1514,7 +1503,7 @@ Suggested solutions:
                     {/* Character grid */}
                     {!isLoadingCharacters && !charactersError && (
                       <div className="grid grid-cols-3 gap-2">
-                        {filteredCharacters.length === 0 ? (
+                        {characters.length === 0 ? (
                           <div className="col-span-3 flex flex-col items-center justify-center py-8">
                             <div className="text-gray-400 text-4xl mb-4">🔍</div>
                             <p className="text-gray-500 text-sm text-center">
@@ -1522,7 +1511,7 @@ Suggested solutions:
                             </p>
                           </div>
                         ) : (
-                          filteredCharacters.map(character => (
+                          characters.map(character => (
                             <div
                               key={character.id}
                               data-character-item="true"
@@ -1593,12 +1582,6 @@ Suggested solutions:
                     <div className="text-sm text-gray-600">
                       {comparisonItems.length} {comparisonItems.length === 1 ? 'object' : 'objects'}
                     </div>
-                    {/* <div className="text-sm text-gray-600">
-                      pixelsPerM: {formatNumber(pixelsPerM, 10)}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      chartAreaHeightPix: {chartAreaHeightPix}
-                    </div> */}
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1">
@@ -1998,19 +1981,6 @@ Suggested solutions:
                     </div>
                   </div>
 
-                  {selectedCharacter.isCustom && (
-                    <div>
-                      <label htmlFor="character-description" className="block text-sm font-medium text-gray-700 mb-1">描述</label>
-                      <textarea
-                        id="character-description"
-                        value={selectedCharacter.description || ''}
-                        onChange={(e) => updateCharacter('description', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        rows={3}
-                        placeholder="输入角色描述"
-                      />
-                    </div>
-                  )}
                 </div>
               </div>
             )}

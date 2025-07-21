@@ -1,6 +1,6 @@
 import { supabaseAdmin, TABLES } from '@lib/supabase_service';
 import { NextRequest, NextResponse } from 'next/server';
-import { CharacterType, type Character } from '@components/Characters';
+import { CharacterType, type Character } from '@lib/characters';
 import { DatabaseCharacter } from '@lib/types';
 
 // 数据库记录转换为前端格式
@@ -10,7 +10,6 @@ function transformDatabaseToFrontend(dbRecord: DatabaseCharacter): Character {
     name: dbRecord.name,
     height: dbRecord.height,
     type: dbRecord.type as CharacterType,
-    description: undefined, // 数据库中暂时没有description字段
     mediaType: dbRecord.media_type,
     mediaUrl: dbRecord.media_url,
     thumbnailUrl: dbRecord.thumbnail_url,
@@ -18,11 +17,7 @@ function transformDatabaseToFrontend(dbRecord: DatabaseCharacter): Character {
     color: dbRecord.color,
     colorCustomizable: dbRecord.color_customizable,
     colorProperty: dbRecord.color_property || undefined,
-    isCustom: false, // 从数据库查询的都是预设角色
-    isActive: dbRecord.is_active,
-    isUploadedImage: false, // 从数据库查询的都不是上传图片
-    createdAt: dbRecord.created_at,
-    updatedAt: dbRecord.updated_at
+    createdAt: dbRecord.created_at
   };
 }
 
@@ -37,7 +32,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'all';
     const search = searchParams.get('search') || '';
-    const limit = parseInt(searchParams.get('limit') || '100');
+    const limit = parseInt(searchParams.get('limit') || '1000');
     const offset = parseInt(searchParams.get('offset') || '0');
 
     console.log(`queryCharacters params: type=${type}, search=${search}, limit=${limit}, offset=${offset}`);
@@ -46,7 +41,6 @@ export async function GET(request: NextRequest) {
     let query = supabaseAdmin
       .from(TABLES.CHARACTERS)
       .select('*')
-      .eq('is_active', true); // 只查询激活的角色
 
     // 按类型过滤
     if (type !== 'all') {
@@ -60,8 +54,7 @@ export async function GET(request: NextRequest) {
 
     // 添加排序和分页
     query = query
-      .order('type', { ascending: true })
-      .order('name', { ascending: true })
+      .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1);
 
     // 执行查询
@@ -95,7 +88,6 @@ export async function GET(request: NextRequest) {
       let countQuery = supabaseAdmin
         .from(TABLES.CHARACTERS)
         .select('*', { count: 'exact', head: true })
-        .eq('is_active', true);
 
       if (type !== 'all') {
         countQuery = countQuery.eq('type', type);

@@ -76,7 +76,6 @@ fetch('/api/queryCharacters?limit=20&offset=20')
 - `color`: 默认颜色
 - `color_customizable`: 是否可自定义颜色
 - `color_property`: 颜色属性名
-- `is_active`: 是否激活
 - `created_at`: 创建时间
 - `updated_at`: 更新时间
 

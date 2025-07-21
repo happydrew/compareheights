@@ -12,7 +12,6 @@ export interface DatabaseCharacter {
   color: string | null;
   color_customizable: boolean;
   color_property: string | null;
-  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
