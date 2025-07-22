@@ -37,7 +37,7 @@ interface Character {
 
 // 预设角色数据（基于米） - 使用新的数据结构
 const PRESET_CHARACTERS: Character[] = [
-  // Generic character - Male (SVG)
+  // 通用角色 - 男性 (SVG)
   {
     id: 'generic-male-1',
     name: 'Male 1',
@@ -54,7 +54,7 @@ const PRESET_CHARACTERS: Character[] = [
     colorProperty: 'fill'
   },
 
-  // Generic character - Female (SVG)
+  // 通用角色 - 女性 (SVG)
   {
     id: 'generic-female-1',
     name: 'Female 1',
@@ -71,7 +71,7 @@ const PRESET_CHARACTERS: Character[] = [
     colorProperty: 'fill'
   },
 
-  // Celebrity - Musk (Image)
+  // 名人 - 马斯克 (图片)
   {
     id: 'celebrity-musk',
     name: 'Elon Musk',
@@ -86,7 +86,7 @@ const PRESET_CHARACTERS: Character[] = [
     colorCustomizable: false
   },
 
-  // Celebrity - Bill Gates (Image)
+  // 名人 - 比尔·盖茨 (图片)
   {
     id: 'celebrity-gates',
     name: 'Bill Gates',
@@ -101,7 +101,7 @@ const PRESET_CHARACTERS: Character[] = [
     colorCustomizable: false
   },
 
-  // Celebrity - Cristiano Ronaldo (Image)
+  // 名人 - 克里斯蒂亚诺·罗纳尔多 (图片)
   {
     id: 'celebrity-ronaldo',
     name: 'Cristiano Ronaldo',
@@ -116,7 +116,7 @@ const PRESET_CHARACTERS: Character[] = [
     colorCustomizable: false
   },
 
-  // Generic character - Child (SVG)
+  // 通用角色 - 儿童 (SVG)
   {
     id: 'generic-child-1',
     name: 'Child 1',
@@ -133,7 +133,7 @@ const PRESET_CHARACTERS: Character[] = [
     colorProperty: 'fill'
   },
 
-  // Celebrity - Yao Ming
+  // 名人 - 姚明
   {
     id: 'celebrity-yaoming',
     name: 'Yao Ming',
@@ -148,7 +148,7 @@ const PRESET_CHARACTERS: Character[] = [
     colorCustomizable: false
   },
 
-  // Object - Eiffel Tower
+  // 物体 - 埃菲尔铁塔
   {
     id: 'object-eiffel',
     name: 'Eiffel Tower',
@@ -165,7 +165,7 @@ const PRESET_CHARACTERS: Character[] = [
     colorProperty: 'fill'
   },
 
-  // Biology - Giraffe
+  // 生物 - 长颈鹿
   {
     id: 'bio-giraffe',
     name: 'Giraffe',
@@ -242,7 +242,7 @@ function setToCache(type: CharacterType | 'all', data: Character[], total: numbe
   };
 
   charactersCache.set(type, cacheEntry);
-  //console.log(`💾 Cached ${data.length} characters for ${type}`);
+  //console.log(`💾 已缓存 ${data.length} 个角色，类型：${type}`);
 }
 
 // 模拟API延迟
@@ -255,7 +255,7 @@ const queryCharactersMock = async (params: QueryCharactersParams = {}): Promise<
   if (Math.random() < 0.33) {
     return {
       success: false,
-      message: 'Mock API error'
+      message: '模拟API错误'
     }
   }
   const {
@@ -288,7 +288,7 @@ const queryCharactersMock = async (params: QueryCharactersParams = {}): Promise<
     success: true,
     data: paginatedCharacters,
     total,
-    message: 'Characters retrieved successfully'
+    message: '角色检索成功'
   };
 };
 
@@ -329,7 +329,7 @@ const queryCharactersApi = async (params: QueryCharactersParams = {}): Promise<Q
     return data;
   } catch (error) {
     console.error('API call failed:', error);
-    throw new Error('Failed to fetch characters from API');
+    throw new Error('从API获取角色失败');
   }
 };
 
@@ -348,7 +348,7 @@ const queryCharacters = async (params: QueryCharactersParams = {}): Promise<Quer
         success: true,
         data: cached.data.slice(0, limit), // 应用limit限制
         total: cached.total,
-        message: 'Data retrieved from cache'
+        message: '数据从缓存中检索'
       };
     }
   }

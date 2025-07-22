@@ -13,7 +13,8 @@ import {
   Unit, Precision, convertHeightSmart, convertHeightSmartImperial, formatNumber, getBestUnit,
   getImperialGridUnitLabel, convertHeightPrecision, convertHeightForGridImperial, convertHeight
 } from './HeightCalculates';
-import { getContentRect } from './utils/Utils'
+import { getContentRect } from './utils/Utils';
+import { generateRandomName, shouldGenerateRandomName } from '../lib/nameGenerator';
 
 // 比较项目接口
 interface ComparisonItem {
@@ -88,34 +89,43 @@ const HeightCompareTool: React.FC = () => {
   const [isLoadingCharacters, setIsLoadingCharacters] = useState(false);
   const [charactersError, setCharactersError] = useState<string | null>(null);
 
-  // 加载角色数据的函数
-  const loadCharacters = useCallback(async () => {
+  const loadCharactersRequestId = useRef<number>(0); // 记录当前请求的ID，用于取消请求
+
+  const loadCharacters = useCallback(() => {
     setIsLoadingCharacters(true);
     setCharactersError(null);
 
-    try {
-      const response: QueryCharactersResponse = await queryCharacters({
-        type: selectedCategory,
-        search: searchTerm,
-        limit: 1000 // 可根据需要调整
-      });
-
+    let requestId = ++loadCharactersRequestId.current; // 记录当前请求的ID
+    console.log(`开始加载角色数据，requestId：${requestId}, type：${selectedCategory}, search：${searchTerm}`)
+    queryCharacters({
+      type: selectedCategory,
+      search: searchTerm,
+      limit: 1000 // 可根据需要调整
+    }).then(response => {
+      if (requestId !== loadCharactersRequestId.current) {
+        console.log(`requestId：${requestId} 请求已被覆盖，跳过处理, 最新的 requestId：${loadCharactersRequestId.current}`);
+        // 如果本请求被覆盖，说明又最新的请求在进行中，那么此时不用把IsLoadingCharacters设为true
+        return;
+      }
       if (response.success) {
+        console.log(`加载角色数据成功，requestId：${requestId}`);
         setCharacters(response.data);
       } else {
         setCharactersError(response.message || 'Failed to load characters');
       }
-    } catch (error) {
-      setCharactersError('Failed to load characters');
-      console.error('Error loading characters:', error);
-    } finally {
       setIsLoadingCharacters(false);
-    }
-  }, [selectedCategory, searchTerm]);
+    }).catch(error => {
+      setCharactersError('Failed to load characters');
+      if (requestId == loadCharactersRequestId.current) {
+        setIsLoadingCharacters(false);
+      }
+      console.error('Error loading characters:', error);
+    })
+  }, [selectedCategory, searchTerm])
 
-  // 初始加载和搜索条件变化时重新加载
+  // 初始加载和搜索条件变化时重新加载角色数据
   useEffect(() => {
-    loadCharacters();
+    loadCharacters()
   }, [loadCharacters]);
 
   // 添加重置缩放函数
@@ -130,12 +140,12 @@ const HeightCompareTool: React.FC = () => {
     }
   }, [comparisonItems.length])
 
-  // Calculate pixel height of chart display area
+  // 计算图表显示区域的像素高度
   useEffect(() => {
     const chartArea = chartAreaRef.current;
     if (!chartArea) return;
 
-    // Initialize height - use utility function to get content area height
+    // 初始化高度 - 使用工具函数获取内容区域高度
     const chartAreaHeightPix = getContentRect(chartArea).height;
     console.log('ChartAreaHeightPix: ' + chartAreaHeightPix);
     setChartAreaHeightPix(chartAreaHeightPix);
@@ -143,12 +153,12 @@ const HeightCompareTool: React.FC = () => {
     // 创建 ResizeObserver 实例
     const resizeObserver = new ResizeObserver(([entry]) => {
       if (entry) {
-        // contentRect.height already excludes padding, use directly
+        // contentRect.height 已经排除了内边距，直接使用
         setChartAreaHeightPix(entry.contentRect.height);
       }
     });
 
-    // Start observing element
+    // 开始监听元素
     resizeObserver.observe(chartArea);
 
     // 清理函数
@@ -159,15 +169,15 @@ const HeightCompareTool: React.FC = () => {
 
   /**Current conversion ratio between m and px (screen pixels), i.e., how many px equals 1m */
   const pixelsPerM = useMemo(() => {
-    // If there's a manually adjusted value, use the manually adjusted value
+    // 如果有手动调整的值，使用手动调整的值
     if (pixelsPerMState !== 1) {
       return pixelsPerMState;
     }
-    // Otherwise use auto-calculated value with high precision calculation
+    // 否则使用自动计算值，采用高精度计算
     const maxHeight = getMaxHeightInComparison(comparisonItems);
     const availablePixHeight = chartAreaHeightPix - 70;
 
-    // Use high precision calculation to avoid precision loss in extreme cases
+    // 使用高精度计算以避免极端情况下的精度损失
     const pixHeightPrecision = Precision.from(availablePixHeight);
     const maxHeightPrecision = Precision.from(maxHeight);
     const ratio = pixHeightPrecision.divide(maxHeightPrecision);
@@ -233,33 +243,33 @@ const HeightCompareTool: React.FC = () => {
     if (!chartArea) return;
 
     const handleWheel = (e: WheelEvent) => {
-      // Check if Ctrl key is pressed
+      // 检查是否按下了Ctrl键
       if (e.ctrlKey) {
         console.log('Ctrl key pressed, starting zoom');
-        e.preventDefault(); // Prevent default zoom behavior
+        e.preventDefault(); // 阻止默认的缩放行为
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
         handleZoom(delta);
       }
     }
 
-    // Add event listener
+    // 添加事件监听器
     chartArea.addEventListener('wheel', handleWheel, { passive: false });
 
     // 清理函数
     return () => {
       chartArea.removeEventListener('wheel', handleWheel);
     };
-  }, [handleZoom]); // Remove pixelsPerM dependency to avoid duplicate event binding
+  }, [handleZoom]); // 移除pixelsPerM依赖以避免重复的事件绑定
 
-  const [leftPanelSplit, setLeftPanelSplit] = useState(50); // Percentage, controls height allocation of top and bottom areas
+  const [leftPanelSplit, setLeftPanelSplit] = useState(50); // 百分比，控制上下区域的高度分配
   const [isDragging, setIsDragging] = useState(false);
 
-  // Add refs
+  // 添加refs引用
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const characterListRef = useRef<HTMLDivElement>(null);
   const chartAreaRef = useRef<HTMLDivElement>(null);
 
-  // Add drag state
+  // 添加拖拽状态
   const [dragState, setDragState] = useState<DragState>({
     isDragging: false,
     draggedItemId: null,
@@ -272,7 +282,7 @@ const HeightCompareTool: React.FC = () => {
     draggedElement: null,
   });
 
-  // Add left panel character list drag state
+  // 添加左侧面板角色列表拖拽状态
   const [leftPanelDragState, setLeftPanelDragState] = useState<DragState>({
     isDragging: false,
     draggedItemId: null,
@@ -326,7 +336,7 @@ const HeightCompareTool: React.FC = () => {
   // 导出功能状态
   const [showExportDropdown, setShowExportDropdown] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
-  const exportButtonRef = useRef<HTMLButtonElement>(null)
+  const exportButtonRef = useRef<HTMLDivElement>(null)
 
   // 图表标题状态
   const [chartTitle, setChartTitle] = useState('Height Comparison')
@@ -419,8 +429,8 @@ const HeightCompareTool: React.FC = () => {
     } catch (error) {
       console.error('Export failed:', error);
 
-      // Error handling: provide user-friendly tips
-      const errorMessage = `Image export failed. Possible causes:
+      // Error handling: provide user-friendly message
+      const errorMessage = `Image export failed. Possible reasons:
 • Image resource loading issues
 • Browser security restrictions
 
@@ -437,30 +447,30 @@ Suggested solutions:
     }
   }, [comparisonItems, styleSettings.backgroundColor, chartTitle]);
 
-  // Download Canvas as image
+  // 将Canvas下载为图片
   const downloadCanvas = (canvas: HTMLCanvasElement, format: 'png' | 'jpg' | 'webp', title: string) => {
     try {
       const link = document.createElement('a');
       link.download = title;
 
-      // Set different quality parameters based on format
+      // 根据格式设置不同的质量参数
       let dataUrl: string;
       if (format === 'jpg') {
-        dataUrl = canvas.toDataURL('image/jpeg', 0.92); // High quality JPEG
+        dataUrl = canvas.toDataURL('image/jpeg', 0.92); // 高质量JPEG
       } else if (format === 'webp') {
-        dataUrl = canvas.toDataURL('image/webp', 0.95); // High quality WebP
+        dataUrl = canvas.toDataURL('image/webp', 0.95); // 高质量WebP
       } else {
-        dataUrl = canvas.toDataURL('image/png'); // PNG lossless
+        dataUrl = canvas.toDataURL('image/png'); // PNG无损
       }
 
       link.href = dataUrl;
 
-      // Trigger download
+      // 触发下载
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      // Show success message
+      // 显示成功消息
       console.log(`Image exported as ${format.toUpperCase()} format`);
 
     } catch (error) {
@@ -469,19 +479,19 @@ Suggested solutions:
     }
   };
 
-  // Handle export dropdown menu
+  // 处理导出下拉菜单
   const handleExportClick = useCallback(() => {
     setShowExportDropdown(!showExportDropdown);
   }, [showExportDropdown]);
 
-  // Handle outside clicks for export dropdown menu
+  // 处理导出下拉菜单的外部点击
   useEffect(() => {
     if (!showExportDropdown) return;
 
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
 
-      // If clicked outside export button and dropdown menu, close dropdown
+      // 如果点击导出按钮和下拉菜单外部，则关闭下拉菜单
       if (exportButtonRef.current && !exportButtonRef.current.contains(target)) {
         setShowExportDropdown(false);
       }
@@ -537,16 +547,16 @@ Suggested solutions:
 
       const target = event.target as HTMLElement;
 
-      // Check if click is inside right panel
+      // 检查点击是否在右侧面板内
       const isClickInRightPanel = rightPanelRef.current?.contains(target);
 
-      // Check if click is on a character item
+      // 检查点击是否在角色项目上
       const isClickOnCharacterItem = target.closest('[data-character-item="true"]');
 
-      // Check if edit button was clicked
+      // 检查是否点击了编辑按钮
       const isClickOnEditButton = target.closest('button[title="Edit character"]');
 
-      // If click is not in right panel, not on character item, and not edit button, close panel
+      // 如果点击不在右侧面板、不在角色项目上、也不是编辑按钮，则关闭面板
       if (!isClickInRightPanel && !isClickOnCharacterItem && !isClickOnEditButton) {
         setShowRightPanel(false);
         setSelectedCharacter(null);
@@ -561,7 +571,7 @@ Suggested solutions:
     };
   }, [showRightPanel]);
 
-  // Handle drag start
+  // 处理拖拽开始
   const handleDragStart = useCallback((itemId: string, e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -847,26 +857,26 @@ Suggested solutions:
     }
   }, [leftPanelDragState.isDragging, handleLeftPanelDragMove, handleLeftPanelDragEnd]);
 
-  // Calculate placeholder element styles (show as transparent placeholder when dragged)
+  // 计算占位元素样式（拖拽时显示为透明占位符）
   const getItemStyle = useCallback((itemId: string, index: number): React.CSSProperties => {
     if (!dragState.isDragging || itemId !== dragState.draggedItemId) {
       return {};
     }
 
-    // Dragged element shows as transparent placeholder in original position
+    // 被拖拽的元素在原位置显示为透明占位符
     return {
       opacity: 0,
       visibility: 'hidden'
     };
   }, [dragState]);
 
-  // Calculate left panel character list item styles
+  // 计算左侧面板角色列表项样式
   const getLeftPanelItemStyle = useCallback((itemId: string): React.CSSProperties => {
     if (!leftPanelDragState.isDragging || itemId !== leftPanelDragState.draggedItemId) {
       return {};
     }
 
-    // Dragged element shows as transparent placeholder in original position
+    // 被拖拽的元素在原位置显示为透明占位符
     return {
       opacity: 0.3,
       pointerEvents: 'none'
@@ -874,7 +884,8 @@ Suggested solutions:
   }, [leftPanelDragState]);
 
   const addToComparison = (character: Character) => {
-    // Calculate count of same original characters for generating sequence numbers
+    const name=
+    // 计算相同原始角色的数量以生成序号
     let maxSimilarNameIndex: number = -1;
     for (let i = 0; i < comparisonItems.length; i++) {
       if (comparisonItems[i].character.name.length >= character.name.length &&
@@ -895,11 +906,13 @@ Suggested solutions:
       }
     }
 
-    // Create deep copy of character to avoid referencing same object
+    // 创建角色的深拷贝以避免引用同一对象
     const newCharacter: Character = {
       ...character,
-      id: `custom-${character.id}-${Date.now()}-${Math.random()}`, // Ensure unique ID with custom prefix
-      name: maxSimilarNameIndex == -1 ? character.name : `${character.name} ${maxSimilarNameIndex + 1}`
+      id: `custom-${character.id}-${Date.now()}-${Math.random()}`, // 确保具有自定义前缀的唯一ID
+      name: shouldGenerateRandomName(character.id)
+        ? generateRandomName(character.id, character.name)
+        : maxSimilarNameIndex == -1 ? character.name : `${character.name} ${maxSimilarNameIndex + 1}`
     };
 
     const newItem: ComparisonItem = {
@@ -936,18 +949,18 @@ Suggested solutions:
   const updateCharacter = (key: string, value: any) => {
     if (!selectedCharacter || !selectedComparisonItemId) return;
 
-    // Update character in comparison list
+    // 在比较列表中更新角色
     setComparisonItems(comparisonItems.map(item =>
       item.id === selectedComparisonItemId
         ? { ...item, character: { ...item.character, [key]: value } }
         : item
     ));
 
-    // Update selected character
+    // 更新选中的角色
     setSelectedCharacter({ ...selectedCharacter, [key]: value });
   };
 
-  // Handle image upload and create character
+  // 处理图片上传并创建角色
   const handleImageUpload = (imageData: {
     imageUrl: string;
     heightInM: number;
@@ -956,30 +969,30 @@ Suggested solutions:
   }) => {
     const { imageUrl, heightInM, widthInM, aspectRatio } = imageData;
 
-    // Create new character
+    // 创建新角色
     const newCharacter: Character = {
       id: `upload-${Date.now()}-${Math.random()}`,
       name: 'Uploaded Character',
       height: heightInM,
       // width: calculatedWidthInM,
       type: CharacterType.UPLOAD,
-      // Media related fields - flattened
+      // 媒体相关字段 - 扁平化
       mediaType: 'image',
       mediaUrl: imageUrl,
       thumbnailUrl: imageUrl,
-      // Appearance related fields - flattened
+      // 外观相关字段 - 扁平化
       color: '#10B981',
       colorCustomizable: false
     };
 
-    // Add to comparison list
+    // 添加到比較列表
     addToComparison(newCharacter);
 
-    // Close upload modal
+    // 关闭上传模态框
     setShowImageUploadModal(false);
   };
 
-  // Handle dragging separator line
+  // 处理拖拽分隔线
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     e.preventDefault();
@@ -993,7 +1006,7 @@ Suggested solutions:
 
     const rect = leftPanel.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    // Ensure separator line is always visible, limit between 25%-75%
+    // 确保分隔线始终可见，限制在25%-75%之间
     const percentage = Math.max(25, Math.min(75, (y / rect.height) * 100));
     setLeftPanelSplit(percentage);
   }, [isDragging]);
@@ -1033,7 +1046,7 @@ Suggested solutions:
     e.preventDefault();
   }, [dragState.isDragging]);
 
-  // Handle horizontal scroll drag move
+  // 处理横向滚动拖拽移动
   const handleHorizontalScrollMove = useCallback((e: MouseEvent) => {
     if (!horizontalScrollState.isDragging) return;
 
@@ -1046,14 +1059,14 @@ Suggested solutions:
     e.preventDefault();
   }, [horizontalScrollState]);
 
-  // Handle horizontal scroll drag end
+  // 处理横向滚动拖拽结束
   const handleHorizontalScrollEnd = useCallback(() => {
     if (horizontalScrollState.isDragging) {
       setHorizontalScrollState(prev => ({ ...prev, isDragging: false }));
     }
   }, [horizontalScrollState.isDragging]);
 
-  // Add horizontal scroll event listeners
+  // 添加横向滚动事件监听器
   useEffect(() => {
     if (horizontalScrollState.isDragging) {
       document.addEventListener('mousemove', handleHorizontalScrollMove);
@@ -1066,7 +1079,7 @@ Suggested solutions:
   }, [horizontalScrollState.isDragging, handleHorizontalScrollMove, handleHorizontalScrollEnd]);
 
 
-  // Update scrollbar state
+  // 更新滚动条状态
   const updateScrollbarState = () => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -1197,7 +1210,7 @@ Suggested solutions:
     setScrollbarState(prev => ({ ...prev, isDragging: false }));
   }, []);
 
-  // Listen to scrollbar drag events
+  // 监听滚动条拖拽事件
   useEffect(() => {
     if (scrollbarState.isDragging) {
       document.addEventListener('mousemove', handleScrollbarDragMove);
@@ -1209,7 +1222,7 @@ Suggested solutions:
     }
   }, [scrollbarState.isDragging, handleScrollbarDragMove, handleScrollbarDragEnd]);
 
-  // // Calculate scrollbar thumb position and size
+  // 计算滚动条滑块位置和大小
   const getScrollbarThumbStyle = useCallback(() => {
     const { scrollLeft, scrollWidth, clientWidth } = scrollbarState;
 
@@ -1229,7 +1242,7 @@ Suggested solutions:
     };
   }, [scrollbarState]);
 
-  // Clean up timers when component unmounts
+  // 组件卸载时清理定时器
   useEffect(() => {
     return () => {
       if (zoomIndicatorTimerRef.current) {
@@ -1278,7 +1291,7 @@ Suggested solutions:
             display: none;  /* Chrome, Safari, Opera */
           }
 
-          /* Styles when dragging */
+          /* 拖拽时的样式 */
           .dragging-item {
             user-select: none;
             -webkit-user-select: none;
@@ -1293,10 +1306,10 @@ Suggested solutions:
         `
       }} />
 
-      <div className="w-full relative flex bg-gray-50 h-[85vh]">
-        {/* Left panel */}
+      <div className="w-full relative flex bg-gray-50 h-[85vh] overflow-hidden">
+        {/* 左侧面板 */}
         <div className="min-w-80 w-1/5 h-full bg-white border-r border-gray-200 flex flex-col left-panel">
-          {/* Current character list */}
+          {/* 当前角色列表 */}
           <div className="border-b border-gray-200 flex flex-col" style={{ height: `${leftPanelSplit}%` }}>
             <div className="px-2 py-2 border-b border-gray-200 bg-gray-100">
               <div className="flex items-center justify-between">
@@ -1458,8 +1471,7 @@ Suggested solutions:
             <div className="flex-1 overflow-y-auto p-4 thin-scrollbar relative">
               <div className="absolute inset-4">
                 {selectedCategory === CharacterType.UPLOAD ? (
-                  /* Upload image interface */
-                  <div className="flex flex-col items-center justify-center h-full">
+                  < div className="flex flex-col items-center justify-center h-full">
                     <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center w-full max-w-sm">
                       <div className="text-4xl mb-4">📷</div>
                       <h3 className="text-lg font-medium text-gray-900 mb-2">Upload Image</h3>
@@ -1476,9 +1488,8 @@ Suggested solutions:
                     </div>
                   </div>
                 ) : (
-                  /* Character grid with loading/error states */
                   <>
-                    {/* Loading state */}
+                    {/* 加载状态 */}
                     {isLoadingCharacters && (
                       <div className="flex flex-col items-center justify-center h-full">
                         <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -1486,7 +1497,7 @@ Suggested solutions:
                       </div>
                     )}
 
-                    {/* Error state */}
+                    {/* 错误状态 */}
                     {charactersError && !isLoadingCharacters && (
                       <div className="flex flex-col items-center justify-center h-full">
                         <div className="text-red-500 text-4xl mb-4">⚠️</div>
@@ -1500,7 +1511,7 @@ Suggested solutions:
                       </div>
                     )}
 
-                    {/* Character grid */}
+                    {/* 角色网格 */}
                     {!isLoadingCharacters && !charactersError && (
                       <div className="grid grid-cols-3 gap-2">
                         {characters.length === 0 ? (
@@ -1562,15 +1573,15 @@ Suggested solutions:
                         )}
                       </div>
                     )}
-                  </>
-                )}
+                  </>)}
               </div>
             </div>
           </div>
-        </div>
+        </div >
 
         {/* 中间图表区域 */}
-        <div className={`flex flex-col h-full transition-all duration-300 w-4/5`}>
+        < div className={`flex flex-col h-full transition-all duration-300 w-4/5`
+        }>
           <div id="top-ads" className="w-full h-[120px] m-0 py-[10px]"></div>
           <div className='flex-1 flex w-full'>
             <div className={`flex-1 flex flex-col ${showRightPanel && selectedCharacter ? 'w-[calc(100%-300px)]' : 'w-full'} relative`}>
@@ -1649,7 +1660,7 @@ Suggested solutions:
                         )}
                       </button>
 
-                      {/* Export format dropdown menu */}
+                      {/* 导出格式下拉菜单 */}
                       {showExportDropdown && (
                         <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[1003]">
                           <div className="py-1">
@@ -1691,10 +1702,10 @@ Suggested solutions:
                 </div>
               </div>
 
-              {/* Chart area */}
+              {/* 中间角色对比展示图表区 */}
               <div className="w-full flex-1 p-4 thin-scrollbar relative" style={{ backgroundColor: styleSettings.backgroundColor, height: `calc(100% - 16px)` }}>
                 <div ref={chartAreaRef} className="relative px-20 w-full h-full flex items-end justify-center">
-                  {/* Chart title - editable */}
+                  {/* 图表标题 - 可编辑 */}
                   <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 z-[1001] cursor-text">
                     {isEditingTitle ? (
                       <input
@@ -1918,12 +1929,13 @@ Suggested solutions:
               <div ref={rightPanelRef} className={`w-[300px] bg-white shadow-xl z-[1003] overflow-y-auto border-l border-gray-200 thin-scrollbar transition-transform duration-300`}>
                 <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold">角色详情</h3>
+                    <h3 className="text-lg font-semibold">Character Details</h3>
                     <button
                       onClick={() => {
                         setShowRightPanel(false)
                         setSelectedCharacter(null)
                         setSelectedComparisonItemId(null)
+                        setComparisonItems(prev => prev.map(item => ({ ...item, selected: false })))
                       }}
                       className="text-gray-500 hover:text-gray-700 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
                     >
@@ -1934,19 +1946,19 @@ Suggested solutions:
 
                 <div className="p-4 space-y-4">
                   <div>
-                    <label htmlFor="character-name" className="block text-sm font-medium text-gray-700 mb-1">名称</label>
+                    <label htmlFor="character-name" className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                     <input
                       id="character-name"
                       type="text"
                       value={selectedCharacter.name}
                       onChange={(e) => updateCharacter('name', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="输入角色名称"
+                      placeholder="Enter character name"
                     />
                   </div>
 
                   <div>
-                    <label htmlFor="character-height" className="block text-sm font-medium text-gray-700 mb-1">身高</label>
+                    <label htmlFor="character-height" className="block text-sm font-medium text-gray-700 mb-1">Height</label>
                     <div className="flex gap-2">
                       <input
                         id="character-height"
@@ -1957,7 +1969,7 @@ Suggested solutions:
                         min="0.3"
                         max="3"
                         step="0.01"
-                        placeholder="输入身高"
+                        placeholder="Enter height"
                       />
                       <span className="px-3 py-2 bg-gray-100 rounded-md text-sm">m</span>
                     </div>
@@ -1967,7 +1979,7 @@ Suggested solutions:
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">颜色</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
                     <div className="flex gap-2 flex-wrap">
                       {['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#6B7280'].map(color => (
                         <button
@@ -1975,7 +1987,7 @@ Suggested solutions:
                           onClick={() => updateCharacter('color', color)}
                           className={`w-8 h-8 rounded-full border-2 ${selectedCharacter.color === color ? 'border-gray-800' : 'border-gray-300'}`}
                           style={{ backgroundColor: color }}
-                          title={`选择颜色: ${color}`}
+                          title={`Select color: ${color}`}
                         />
                       ))}
                     </div>
@@ -1986,86 +1998,90 @@ Suggested solutions:
             )}
           </div>
 
-        </div>
+        </div >
 
         {/* Fixed拖拽元素 */}
-        {dragState.isDragging && dragState.draggedItemId && dragState.draggedElement && (
-          <div
-            style={{
-              position: 'fixed',
-              left: dragState.fixedElementX + (dragState.currentMouseX - dragState.startMouseX),
-              top: dragState.fixedElementY + (dragState.currentMouseY - dragState.startMouseY),
-              zIndex: 1000,
-              pointerEvents: 'none',
-              opacity: 0.8,
-              filter: 'brightness(0.9)',
-              boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
-              transform: 'scale(1.02)',
-            }}
-          >
-            {(() => {
-              const draggedItem = comparisonItems.find(item => item.id === dragState.draggedItemId);
-              if (!draggedItem) return null;
+        {
+          dragState.isDragging && dragState.draggedItemId && dragState.draggedElement && (
+            <div
+              style={{
+                position: 'fixed',
+                left: dragState.fixedElementX + (dragState.currentMouseX - dragState.startMouseX),
+                top: dragState.fixedElementY + (dragState.currentMouseY - dragState.startMouseY),
+                zIndex: 1000,
+                pointerEvents: 'none',
+                opacity: 0.8,
+                filter: 'brightness(0.9)',
+                boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
+                transform: 'scale(1.02)',
+              }}
+            >
+              {(() => {
+                const draggedItem = comparisonItems.find(item => item.id === dragState.draggedItemId);
+                if (!draggedItem) return null;
 
-              return (
-                <div className="flex flex-col items-center px-3">
-                  <CharacterDisplay
-                    character={draggedItem.character}
-                    pixelsPerM={pixelsPerM}
-                    isSelected={false}
-                    unit={unit}
-                    isDragging={true}
-                    onEdit={() => { }}
-                    onMove={() => { }}
-                    onDelete={() => { }}
-                  />
-                </div>
-              );
-            })()}
-          </div>
-        )}
+                return (
+                  <div className="flex flex-col items-center px-3">
+                    <CharacterDisplay
+                      character={draggedItem.character}
+                      pixelsPerM={pixelsPerM}
+                      isSelected={false}
+                      unit={unit}
+                      isDragging={true}
+                      onEdit={() => { }}
+                      onMove={() => { }}
+                      onDelete={() => { }}
+                    />
+                  </div>
+                );
+              })()}
+            </div>
+          )
+        }
 
         {/* 左侧角色列表Fixed拖拽元素 */}
-        {leftPanelDragState.isDragging && leftPanelDragState.draggedItemId && leftPanelDragState.draggedElement && (
-          <div
-            style={{
-              position: 'fixed',
-              left: leftPanelDragState.fixedElementX + (leftPanelDragState.currentMouseX - leftPanelDragState.startMouseX),
-              top: leftPanelDragState.fixedElementY + (leftPanelDragState.currentMouseY - leftPanelDragState.startMouseY),
-              zIndex: 1001,
-              pointerEvents: 'none',
-              opacity: 0.9,
-              filter: 'brightness(0.95)',
-              boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
-              transform: 'scale(1.02)',
-              width: leftPanelDragState.draggedElement.offsetWidth,
-            }}
-          >
-            {(() => {
-              const draggedItem = comparisonItems.find(item => item.id === leftPanelDragState.draggedItemId);
-              if (!draggedItem) return null;
+        {
+          leftPanelDragState.isDragging && leftPanelDragState.draggedItemId && leftPanelDragState.draggedElement && (
+            <div
+              style={{
+                position: 'fixed',
+                left: leftPanelDragState.fixedElementX + (leftPanelDragState.currentMouseX - leftPanelDragState.startMouseX),
+                top: leftPanelDragState.fixedElementY + (leftPanelDragState.currentMouseY - leftPanelDragState.startMouseY),
+                zIndex: 1001,
+                pointerEvents: 'none',
+                opacity: 0.9,
+                filter: 'brightness(0.95)',
+                boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
+                transform: 'scale(1.02)',
+                width: leftPanelDragState.draggedElement.offsetWidth,
+              }}
+            >
+              {(() => {
+                const draggedItem = comparisonItems.find(item => item.id === leftPanelDragState.draggedItemId);
+                if (!draggedItem) return null;
 
-              return (
-                <div className="flex items-center justify-between p-2 text-sm border-l-4 border-blue-500 bg-blue-50 rounded">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{draggedItem.character.name}</span>
+                return (
+                  <div className="flex items-center justify-between p-2 text-sm border-l-4 border-blue-500 bg-blue-50 rounded">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{draggedItem.character.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-600">
+                        {convertHeight(draggedItem.character.height, unit)}
+                      </span>
+                      <button className="text-gray-400 p-1 cursor-grab">
+                        <GripVertical className="w-3 h-3" />
+                      </button>
+                      <button className="text-red-500 p-1">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-gray-600">
-                      {convertHeight(draggedItem.character.height, unit)}
-                    </span>
-                    <button className="text-gray-400 p-1 cursor-grab">
-                      <GripVertical className="w-3 h-3" />
-                    </button>
-                    <button className="text-red-500 p-1">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        )}
+                );
+              })()}
+            </div>
+          )
+        }
 
         {/* 导出格式选择弹窗已移除，改为下拉菜单 */}
 
@@ -2075,7 +2091,7 @@ Suggested solutions:
           onClose={() => setShowImageUploadModal(false)}
           onSave={handleImageUpload}
         />
-      </div>
+      </div >
     </>
   );
 };

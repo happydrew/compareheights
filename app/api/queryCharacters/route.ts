@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
         success: true,
         data: [],
         total: 0,
-        message: 'No characters found'
+        message: '未找到角色'
       }, { status: 200 });
     }
 
@@ -106,15 +106,15 @@ export async function GET(request: NextRequest) {
       success: true,
       data: characters,
       total: totalCount,
-      message: 'Characters retrieved successfully'
+      message: '角色检索成功'
     }, { status: 200 });
 
   } catch (error) {
     console.error('queryCharacters error:', error);
     return NextResponse.json({
       success: false,
-      error: 'Failed to query characters',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      error: '查询角色失败',
+      message: error instanceof Error ? error.message : '未知错误'
     }, { status: 500 });
   }
 }

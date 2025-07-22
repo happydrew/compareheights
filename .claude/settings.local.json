@@ -20,7 +20,8 @@
       "Bash(pnpm:*)",
       "Bash(ls:*)",
       "WebFetch(domain:html2canvas.hertzen.com)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(find:*)"
     ],
     "deny": []
   }
