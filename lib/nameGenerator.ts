@@ -7,49 +7,59 @@ export interface NameLibrary {
 // 各类角色的姓名库，每类10个姓名（匹配实际角色ID格式）
 export const CHARACTER_NAMES: NameLibrary = {
   // 成年男性 (generic-male)
-  'generic-male': [
+  'generic-genman': [
     'Alex Chen', 'David Wilson', 'Michael Brown', 'James Taylor', 'Robert Davis',
     'William Garcia', 'John Martinez', 'Thomas Anderson', 'Christopher Lee', 'Daniel White'
   ],
-  
+
+  'generic-man': [
+    'Alex Chen', 'David Wilson', 'Michael Brown', 'James Taylor', 'Robert Davis',
+    'William Garcia', 'John Martinez', 'Thomas Anderson', 'Christopher Lee', 'Daniel White'
+  ],
+
   // 成年女性 (generic-female)
-  'generic-female': [
+  'generic-genwoman': [
     'Emily Johnson', 'Sarah Miller', 'Jessica Davis', 'Ashley Wilson', 'Amanda Brown',
     'Jennifer Garcia', 'Lisa Martinez', 'Michelle Taylor', 'Stephanie Lee', 'Nicole White'
   ],
-  
+
+  'generic-woman': [
+    'Emily Johnson', 'Sarah Miller', 'Jessica Davis', 'Ashley Wilson', 'Amanda Brown',
+    'Jennifer Garcia', 'Lisa Martinez', 'Michelle Taylor', 'Stephanie Lee', 'Nicole White'
+  ],
+
   // 儿童 (generic-child) - 可以是男孩或女孩
   'generic-child': [
     'Tyler Smith', 'Emma Chen', 'Brandon Wilson', 'Olivia Brown', 'Justin Taylor',
     'Ava Davis', 'Kevin Garcia', 'Sophia Martinez', 'Ryan Anderson', 'Mia Lee'
   ],
-  
+
   // 老年男性
-  'generic-elderly-male': [
+  'generic-oldman': [
     'George Thompson', 'Frank Miller', 'Henry Davis', 'Walter Wilson', 'Arthur Brown',
     'Harold Garcia', 'Ralph Martinez', 'Albert Taylor', 'Eugene Anderson', 'Ernest Lee'
   ],
-  
+
   // 老年女性
-  'generic-elderly-female': [
+  'generic-oldwoman': [
     'Dorothy Johnson', 'Betty Miller', 'Helen Davis', 'Margaret Wilson', 'Ruth Brown',
     'Frances Garcia', 'Joan Martinez', 'Mary Taylor', 'Patricia Anderson', 'Barbara Lee'
   ],
-  
+
   // 婴儿/幼儿（性别中性）
   'generic-baby': [
     'Baby Alex', 'Baby Sam', 'Baby Jordan', 'Baby Taylor', 'Baby Casey',
     'Baby Riley', 'Baby Avery', 'Baby Quinn', 'Baby Morgan', 'Baby Blake'
   ],
-  
+
   // 青少年男性
-  'generic-teen-male': [
+  'generic-boy': [
     'Jake Thompson', 'Noah Miller', 'Ethan Davis', 'Lucas Wilson', 'Mason Brown',
     'Logan Garcia', 'Jackson Martinez', 'Aiden Taylor', 'Carter Anderson', 'Owen Lee'
   ],
-  
+
   // 青少年女性
-  'generic-teen-female': [
+  'generic-girl': [
     'Chloe Johnson', 'Madison Miller', 'Abigail Davis', 'Grace Wilson', 'Lily Brown',
     'Zoe Garcia', 'Natalie Martinez', 'Hannah Taylor', 'Samantha Anderson', 'Ella Lee'
   ],
@@ -67,23 +77,23 @@ export const generateRandomName = (characterId: string, originalName: string): s
   if (!characterId.startsWith('generic-')) {
     return originalName;
   }
-  
+
   // 移除数字后缀，获取基础角色类型
   const baseType = characterId.replace(/-\d+$/, '');
-  
+
   // 获取对应的姓名库
   const nameList = CHARACTER_NAMES[baseType];
-  
+
   if (!nameList || nameList.length === 0) {
     // 如果没找到对应姓名库，返回原名称
     console.log(`No name library found for baseType: ${baseType}, returning original name: ${originalName}`);
     return originalName;
   }
-  
+
   // 随机选择一个姓名
   const randomIndex = Math.floor(Math.random() * nameList.length);
   const randomName = nameList[randomIndex];
-  
+
   console.log(`Generated random name for ${characterId} (${baseType}): ${randomName}`);
   return randomName;
 };

@@ -402,49 +402,55 @@ const HeightCompareTool: React.FC = () => {
 
     setIsExporting(true);
 
-    const element = chartAreaRef.current;
+    // 让React先更新UI显示加载状态，然后再执行耗时操作
+    setTimeout(async () => {
+      const element = chartAreaRef.current;
+      if (!element) {
+        setIsExporting(false);
+        return;
+      }
 
-    try {
+      try {
+        // 使用html2canvas进行截图，手动扩展捕获区域
+        const canvas = await html2canvas(element, {
+          backgroundColor: styleSettings.backgroundColor,
+          useCORS: true,
+          scale: 2,
+          x: -20,  // 向左扩展20px
+          y: -60,  // 向上扩展60px（包含标题）
+          width: element.offsetWidth + 40,   // 左右各扩展20px
+          height: element.offsetHeight + 100, // 上下扩展100px（上60px+下40px）
+          // 忽略特定元素
+          ignoreElements: (element) => {
+            return element.id == 'zoom-controlls' ||
+              element.id == 'characters-container-scrollbar';
+          },
+        });
 
-      // 使用html2canvas进行截图，手动扩展捕获区域
-      const canvas = await html2canvas(element, {
-        backgroundColor: styleSettings.backgroundColor,
-        useCORS: true,
-        scale: 2,
-        x: -20,  // 向左扩展20px
-        y: -60,  // 向上扩展60px（包含标题）
-        width: element.offsetWidth + 40,   // 左右各扩展20px
-        height: element.offsetHeight + 100, // 上下扩展100px（上60px+下40px）
-        // 忽略特定元素
-        ignoreElements: (element) => {
-          return element.id == 'zoom-controlls' ||
-            element.id == 'characters-container-scrollbar';
-        },
-      });
+        // 添加水印后下载图片
+        const canvasWithWatermark = addWatermark(canvas);
+        downloadCanvas(canvasWithWatermark, format, chartTitle);
 
-      // 添加水印后下载图片
-      const canvasWithWatermark = addWatermark(canvas);
-      downloadCanvas(canvasWithWatermark, format, chartTitle);
+      } catch (error) {
+        console.error('Export failed:', error);
 
-    } catch (error) {
-      console.error('Export failed:', error);
+        // 错误处理：提供用户友好的提示
+        const errorMessage = `图片导出失败。可能的原因：
+• 图片资源加载问题
+• 浏览器安全限制
 
-      // Error handling: provide user-friendly message
-      const errorMessage = `Image export failed. Possible reasons:
-• Image resource loading issues
-• Browser security restrictions
+建议解决方案：
+1. 刷新页面重试
+2. 使用浏览器截图功能：
+   - Chrome：F12 → Ctrl+Shift+P → 输入 "screenshot"
+   - 或使用系统截图工具 (Win+Shift+S)`;
 
-Suggested solutions:
-1. Refresh the page and try again
-2. Use browser screenshot function:
-   - Chrome: F12 → Ctrl+Shift+P → type "screenshot"
-   - Or use system screenshot tool (Win+Shift+S)`;
-
-      alert(errorMessage);
-    } finally {
-      setIsExporting(false);
-      setShowExportDropdown(false);
-    }
+        alert(errorMessage);
+      } finally {
+        setIsExporting(false);
+        setShowExportDropdown(false);
+      }
+    }, 0); // 使用0延迟，让React先完成一次渲染循环
   }, [comparisonItems, styleSettings.backgroundColor, chartTitle]);
 
   // 将Canvas下载为图片
@@ -884,13 +890,13 @@ Suggested solutions:
   }, [leftPanelDragState]);
 
   const addToComparison = (character: Character) => {
-    const name=
+    const name = shouldGenerateRandomName(character.id) ? generateRandomName(character.id, character.name) : character.name
     // 计算相同原始角色的数量以生成序号
     let maxSimilarNameIndex: number = -1;
     for (let i = 0; i < comparisonItems.length; i++) {
-      if (comparisonItems[i].character.name.length >= character.name.length &&
-        comparisonItems[i].character.name.startsWith(character.name)) {
-        const indexStr = comparisonItems[i].character.name.slice(character.name.length);
+      if (comparisonItems[i].character.name.length >= name.length &&
+        comparisonItems[i].character.name.startsWith(name)) {
+        const indexStr = comparisonItems[i].character.name.slice(name.length);
         if (indexStr == null || indexStr == '') {
           maxSimilarNameIndex = 0;
         } else {
@@ -910,9 +916,7 @@ Suggested solutions:
     const newCharacter: Character = {
       ...character,
       id: `custom-${character.id}-${Date.now()}-${Math.random()}`, // 确保具有自定义前缀的唯一ID
-      name: shouldGenerateRandomName(character.id)
-        ? generateRandomName(character.id, character.name)
-        : maxSimilarNameIndex == -1 ? character.name : `${character.name} ${maxSimilarNameIndex + 1}`
+      name: maxSimilarNameIndex == -1 ? name : `${name}${maxSimilarNameIndex + 1}`
     };
 
     const newItem: ComparisonItem = {
