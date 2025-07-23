@@ -7,14 +7,14 @@ import html2canvas from 'html2canvas';
 import { CharacterDisplay } from './CharacterDisplay';
 import { ImageUploadModal } from './ImageUploadModal';
 import 'simplebar-react/dist/simplebar.min.css';
-import { type Character, CharacterType } from '../lib/characters';
+import { type Character, CharacterType } from '@lib/characters';
 import { queryCharacters, type QueryCharactersResponse } from '@lib/characters';
 import {
   Unit, Precision, convertHeightSmart, convertHeightSmartImperial, formatNumber, getBestUnit,
   getImperialGridUnitLabel, convertHeightPrecision, convertHeightForGridImperial, convertHeight
 } from './HeightCalculates';
-import { getContentRect } from './utils/Utils';
-import { generateRandomName, shouldGenerateRandomName } from '../lib/nameGenerator';
+import { getContentRect } from '@lib/utils';
+import { generateRandomName, shouldGenerateRandomName } from '@lib/nameGenerator';
 
 // 比较项目接口
 interface ComparisonItem {
@@ -338,6 +338,11 @@ const HeightCompareTool: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false)
   const exportButtonRef = useRef<HTMLDivElement>(null)
 
+  // 分享功能状态
+  const [showShareDropdown, setShowShareDropdown] = useState(false)
+  const [isSharing, setIsSharing] = useState(false)
+  const shareButtonRef = useRef<HTMLDivElement>(null)
+
   // 图表标题状态
   const [chartTitle, setChartTitle] = useState('Height Comparison')
   const [isEditingTitle, setIsEditingTitle] = useState(false)
@@ -435,15 +440,15 @@ const HeightCompareTool: React.FC = () => {
         console.error('Export failed:', error);
 
         // 错误处理：提供用户友好的提示
-        const errorMessage = `图片导出失败。可能的原因：
-• 图片资源加载问题
-• 浏览器安全限制
+        const errorMessage = `Image export failed. Possible reasons:
+• Image resource loading issues
+• Browser security restrictions
 
-建议解决方案：
-1. 刷新页面重试
-2. 使用浏览器截图功能：
-   - Chrome：F12 → Ctrl+Shift+P → 输入 "screenshot"
-   - 或使用系统截图工具 (Win+Shift+S)`;
+Suggested solutions:
+1. Refresh the page and try again
+2. Use browser screenshot function:
+   - Chrome: F12 → Ctrl+Shift+P → Type "screenshot"
+   - Or use system screenshot tool (Win+Shift+S)`;
 
         alert(errorMessage);
       } finally {
@@ -485,6 +490,272 @@ const HeightCompareTool: React.FC = () => {
     }
   };
 
+  // 生成分享用的 PNG 图片
+  const generateShareImage = useCallback(async (): Promise<Blob | null> => {
+    if (comparisonItems.length === 0) return null;
+
+    const element = chartAreaRef.current;
+    if (!element) return null;
+
+    try {
+      setIsSharing(true);
+
+      // 使用与导出相同的配置生成图片
+      const canvas = await html2canvas(element, {
+        backgroundColor: styleSettings.backgroundColor,
+        useCORS: true,
+        scale: 2,
+        x: -20,
+        y: -60,
+        width: element.offsetWidth + 40,
+        height: element.offsetHeight + 100,
+        ignoreElements: (element) => {
+          return element.id == 'zoom-controlls' ||
+            element.id == 'characters-container-scrollbar';
+        },
+      });
+
+      // 添加水印
+      const canvasWithWatermark = addWatermark(canvas);
+
+      // 转换为 Blob
+      return new Promise((resolve) => {
+        canvasWithWatermark.toBlob((blob) => {
+          resolve(blob);
+        }, 'image/png', 1.0);
+      });
+    } catch (error) {
+      console.error('Failed to generate share image:', error);
+      return null;
+    } finally {
+      setIsSharing(false);
+    }
+  }, [comparisonItems, styleSettings.backgroundColor, chartTitle]);
+
+  // 社交媒体分享配置
+  const socialPlatforms = [
+    {
+      name: 'Twitter',
+      icon: '🐦',
+      color: '#1DA1F2',
+      shareUrl: (text: string, url: string) =>
+        `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
+    },
+    {
+      name: 'Facebook',
+      icon: '📘',
+      color: '#1877F2',
+      shareUrl: (text: string, url: string) =>
+        `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}&quote=${encodeURIComponent(text)}`
+    },
+    {
+      name: 'LinkedIn',
+      icon: '💼',
+      color: '#0A66C2',
+      shareUrl: (text: string, url: string) =>
+        `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}&summary=${encodeURIComponent(text)}`
+    },
+    {
+      name: 'Reddit',
+      icon: '🔶',
+      color: '#FF4500',
+      shareUrl: (text: string, url: string) =>
+        `https://reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(text)}`
+    },
+    {
+      name: 'Telegram',
+      icon: '✈️',
+      color: '#0088CC',
+      shareUrl: (text: string, url: string) =>
+        `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`
+    },
+    {
+      name: 'WhatsApp',
+      icon: '💬',
+      color: '#25D366',
+      shareUrl: (text: string, url: string) =>
+        `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`
+    }
+  ];
+
+  // 生成分享文案
+  const generateShareText = useCallback(() => {
+    const characterNames = comparisonItems
+      .slice(0, 3) // 最多显示前3个角色
+      .map(item => item.character.name)
+      .join(', ');
+
+    const moreText = comparisonItems.length > 3 ? ` and ${comparisonItems.length - 3} more` : '';
+
+    const titles = [
+      `🏗️ Amazing height comparison: ${characterNames}${moreText}! 📷 Image included! Check it out at compareheights.org`,
+      `📏 Mind-blowing size comparison featuring ${characterNames}${moreText}! 🖼️ See the visual scale at compareheights.org`,
+      `🎯 Visual height showdown: ${characterNames}${moreText}! 📈 Compare sizes with image at compareheights.org`,
+      `⚡ Epic scale comparison with ${characterNames}${moreText}! 🎆 Explore with visual at compareheights.org`,
+      `🔥 Height battle: ${characterNames}${moreText}! 🎭 Discover the differences (image attached) at compareheights.org`
+    ];
+
+    // 随机选择一个标题
+    return titles[Math.floor(Math.random() * titles.length)];
+  }, [comparisonItems]);
+
+  // 复制图片到剪贴板的函数
+  const copyImageToClipboard = useCallback(async (imageBlob: Blob): Promise<boolean> => {
+    try {
+      // 检查是否支持 ClipboardItem 和图片复制
+      if ('ClipboardItem' in window && navigator.clipboard.write) {
+        const clipboardItem = new ClipboardItem({
+          'image/png': imageBlob
+        });
+        await navigator.clipboard.write([clipboardItem]);
+        return true;
+      }
+    } catch (error) {
+      console.log('Clipboard image copy not supported:', error);
+    }
+    return false;
+  }, []);
+
+  // 处理社交媒体分享
+  const handleSocialShare = useCallback(async (platform: typeof socialPlatforms[0]) => {
+    const shareText = generateShareText();
+    const shareUrl = 'https://compareheights.org';
+
+    try {
+      // 使用 Web Share API (如果支持)
+      if (navigator.share && platform.name === 'Native') {
+        const imageBlob = await generateShareImage();
+        const shareData: ShareData = {
+          title: 'Height Comparison Tool',
+          text: shareText,
+          url: shareUrl
+        };
+
+        // 如果支持文件分享，添加图片
+        if (imageBlob && navigator.canShare) {
+          const files = [new File([imageBlob], 'height-comparison.png', { type: 'image/png' })];
+          try {
+            if (navigator.canShare({ files })) {
+              shareData.files = files;
+            }
+          } catch (e) {
+            // 如果 canShare 不支持 files 参数，则跳过
+          }
+        }
+
+        await navigator.share(shareData);
+      } else {
+        // 对于其他平台，尝试多种方式分享图片
+        const imageBlob = await generateShareImage();
+        let shareMethod = '';
+        
+        if (imageBlob) {
+          // 方法1: 尝试复制图片到剪贴板
+          const clipboardSuccess = await copyImageToClipboard(imageBlob);
+          
+          if (clipboardSuccess) {
+            shareMethod = 'clipboard';
+            // 复制文本到剪贴板
+            try {
+              await navigator.clipboard.writeText(shareText);
+            } catch (e) {
+              console.log('Text copy failed:', e);
+            }
+          } else {
+            // 方法2: 下载图片作为备选
+            shareMethod = 'download';
+            const url = URL.createObjectURL(imageBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `height-comparison-${Date.now()}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          }
+        }
+        
+        // 延迟一下确保操作完成
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // 打开社交媒体分享页面
+        const platformUrl = platform.shareUrl(shareText, shareUrl);
+        window.open(platformUrl, '_blank', 'width=600,height=400,scrollbars=yes,resizable=yes');
+        
+        // 根据分享方法显示不同的提示
+        setTimeout(() => {
+          if (shareMethod === 'clipboard') {
+            alert(`📋 Image and text copied to clipboard!\n\nIn the ${platform.name} sharing page:\n1. Paste text content (Ctrl+V)\n2. Paste image (Ctrl+V)\n\nYou can now publish your post with the image!`);
+          } else if (shareMethod === 'download') {
+            alert(`📥 Image downloaded to your device!\n\nIn the ${platform.name} sharing page:\n1. Type or paste the sharing text\n2. Click the image upload button and select the downloaded image\n\nYou can now publish your post with the image!`);
+          }
+        }, 500);
+      }
+
+      setShowShareDropdown(false);
+    } catch (error) {
+      console.error('Share failed:', error);
+      // 如果分享失败，至少复制链接到剪贴板
+      try {
+        await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+        alert('📎 Share link copied to clipboard!');
+      } catch (clipboardError) {
+        console.error('Failed to copy to clipboard:', clipboardError);
+        alert('Share failed. Please manually copy the link: ' + shareUrl);
+      }
+    }
+  }, [generateShareText, generateShareImage, copyImageToClipboard]);
+
+  // 处理复制链接
+  const handleCopyLink = useCallback(async () => {
+    try {
+      const text = `${generateShareText()} https://compareheights.org`;
+      await navigator.clipboard.writeText(text);
+      alert('Share text copied to clipboard!');
+      setShowShareDropdown(false);
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      // 创建临时文本区域作为备选方案
+      const textArea = document.createElement('textarea');
+      textArea.value = `${generateShareText()} https://compareheights.org`;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      alert('Share text copied to clipboard!');
+      setShowShareDropdown(false);
+    }
+  }, [generateShareText]);
+
+  // 处理下载分享图片
+  const handleDownloadShareImage = useCallback(async () => {
+    const imageBlob = await generateShareImage();
+    if (!imageBlob) {
+      alert('Failed to generate share image');
+      return;
+    }
+
+    try {
+      const url = URL.createObjectURL(imageBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `height-comparison-${Date.now()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setShowShareDropdown(false);
+    } catch (error) {
+      console.error('Failed to download share image:', error);
+      alert('Failed to download image');
+    }
+  }, [generateShareImage]);
+
+  // 处理分享下拉菜单
+  const handleShareClick = useCallback(() => {
+    setShowShareDropdown(!showShareDropdown);
+  }, [showShareDropdown]);
+
   // 处理导出下拉菜单
   const handleExportClick = useCallback(() => {
     setShowExportDropdown(!showExportDropdown);
@@ -509,6 +780,26 @@ const HeightCompareTool: React.FC = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showExportDropdown]);
+
+  // 处理分享下拉菜单的外部点击
+  useEffect(() => {
+    if (!showShareDropdown) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+
+      // 如果点击分享按钮和下拉菜单外部，则关闭下拉菜单
+      if (shareButtonRef.current && !shareButtonRef.current.contains(target)) {
+        setShowShareDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showShareDropdown]);
 
   const handleTitleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === 'Escape') {
@@ -1699,9 +1990,78 @@ const HeightCompareTool: React.FC = () => {
                         </div>
                       )}
                     </div>
-                    <button className="p-2 rounded bg-gray-100 text-gray-600 hover:bg-gray-200" title="Share">
-                      <Share2 className="w-4 h-4" />
-                    </button>
+                    {/* 分享按钮和下拉菜单 */}
+                    <div className="relative" ref={shareButtonRef}>
+                      <button
+                        onClick={handleShareClick}
+                        disabled={comparisonItems.length === 0 || isSharing}
+                        className="p-2 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Share comparison"
+                        onMouseEnter={() => setShowShareDropdown(true)}
+                      >
+                        {isSharing ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                        ) : (
+                          <Share2 className="w-4 h-4" />
+                        )}
+                      </button>
+
+                      {/* 分享下拉菜单 */}
+                      {showShareDropdown && (
+                        <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] min-w-[200px]">
+                          <div className="py-2">
+                            {/* 社交媒体平台 */}
+                            <div className="px-3 py-1 text-xs font-medium text-gray-500 uppercase tracking-wide">Social Media</div>
+                            {socialPlatforms.map((platform) => (
+                              <button
+                                key={platform.name}
+                                onClick={() => handleSocialShare(platform)}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center"
+                                title={`Share on ${platform.name}`}
+                              >
+                                <span className="mr-3 text-base" style={{ color: platform.color }}>{platform.icon}</span>
+                                <div className="font-medium">{platform.name}</div>
+                              </button>
+                            ))}
+
+                            <div className="border-t border-gray-100 my-2"></div>
+
+                            {/* 其他分享选项 */}
+                            <div className="px-3 py-1 text-xs font-medium text-gray-500 uppercase tracking-wide">Other Options</div>
+
+                            {/* 原生分享 API (如果支持) */}
+                            {navigator.share && (
+                              <button
+                                onClick={() => handleSocialShare({ name: 'Native', icon: '📱', color: '#666', shareUrl: () => '' })}
+                                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center"
+                                title="Use native sharing"
+                              >
+                                <span className="mr-3">📱</span>
+                                <div className="font-medium">Share...</div>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={handleCopyLink}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center"
+                              title="Copy share text to clipboard"
+                            >
+                              <span className="mr-3">📎</span>
+                              <div className="font-medium">Copy Link</div>
+                            </button>
+
+                            <button
+                              onClick={handleDownloadShareImage}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center"
+                              title="Download comparison image"
+                            >
+                              <span className="mr-3">🖼️</span>
+                              <div className="font-medium">Download Image</div>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

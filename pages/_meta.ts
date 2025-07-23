@@ -7,13 +7,6 @@ export default {
       layout: 'raw'
     }
   },
-  pricing: {
-    type: 'page',
-    title: 'Pricing',
-    theme: {
-      layout: 'raw'
-    }
-  },
   "privacy-policy": {
     type: 'page',
     title: 'Privacy Policy',
@@ -24,21 +17,10 @@ export default {
     title: 'Terms of Service',
     display: 'hidden'
   },
-  "refund-policy": {
-    type: 'page',
-    title: 'Refund Policy',
-    display: 'hidden'
-  },
   docs: {
     type: 'page',
     title: 'Documentation'
   },
-  // tags: {
-  //   display: "children",
-  //   theme: {
-  //     layout: "raw",
-  //   },
-  // },
   tags: {
     display: "children",
     theme: {
@@ -58,14 +40,6 @@ export default {
   contact: {
     type: 'page',
     title: 'Contact',
-    theme: {
-      layout: 'raw'
-    }
-  },
-  payment: {
-    type: 'page',
-    title: 'Payment',
-    display: 'hidden',
     theme: {
       layout: 'raw'
     }

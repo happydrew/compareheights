@@ -30,9 +30,6 @@ interface Character {
   color?: string | null; // 默认颜色
   colorCustomizable: boolean; // 是否支持自定义颜色
   colorProperty?: string; // SVG中需要修改颜色的属性名（如'fill', 'stroke'）
-
-  // 时间戳字段
-  createdAt?: string; // 创建时间
 }
 
 // 预设角色数据（基于米） - 使用新的数据结构
@@ -382,8 +379,7 @@ const MOCK_CHARACTERS: Character[] = [
     svgContent: null,
     color: '#3B82F6',
     colorCustomizable: false,
-    colorProperty: 'fill',
-    createdAt: '2024-01-01T00:00:00Z'
+    colorProperty: 'fill'
   },
   {
     id: 'generic-female-1',
@@ -396,8 +392,7 @@ const MOCK_CHARACTERS: Character[] = [
     svgContent: null,
     color: '#EC4899',
     colorCustomizable: false,
-    colorProperty: 'fill',
-    createdAt: '2024-01-01T00:00:00Z'
+    colorProperty: 'fill'
   },
   {
     id: 'celebrity-musk',
@@ -408,8 +403,7 @@ const MOCK_CHARACTERS: Character[] = [
     mediaUrl: '/assets/images/original-3.webp',
     thumbnailUrl: '/assets/images/original-3.webp',
     color: '#1F2937',
-    colorCustomizable: false,
-    createdAt: '2024-01-01T00:00:00Z'
+    colorCustomizable: false
   },
   {
     id: 'celebrity-gates',
@@ -420,8 +414,7 @@ const MOCK_CHARACTERS: Character[] = [
     mediaUrl: '/assets/images/original-4.webp',
     thumbnailUrl: '/assets/images/original-4.webp',
     color: '#374151',
-    colorCustomizable: false,
-    createdAt: '2024-01-01T00:00:00Z'
+    colorCustomizable: false
   },
   {
     id: 'celebrity-ronaldo',
@@ -432,8 +425,7 @@ const MOCK_CHARACTERS: Character[] = [
     mediaUrl: '/assets/images/original-1.webp',
     thumbnailUrl: '/assets/images/original-1.webp',
     color: '#EF4444',
-    colorCustomizable: false,
-    createdAt: '2024-01-01T00:00:00Z'
+    colorCustomizable: false
   },
   {
     id: 'generic-child-1',
@@ -446,8 +438,7 @@ const MOCK_CHARACTERS: Character[] = [
     svgContent: null,
     color: '#F59E0B',
     colorCustomizable: false,
-    colorProperty: 'fill',
-    createdAt: '2024-01-01T00:00:00Z'
+    colorProperty: 'fill'
   },
   {
     id: 'celebrity-yaoming',
@@ -458,8 +449,7 @@ const MOCK_CHARACTERS: Character[] = [
     mediaUrl: '/assets/images/original-2.webp',
     thumbnailUrl: '/assets/images/original-2.webp',
     color: '#8B5CF6',
-    colorCustomizable: false,
-    createdAt: '2024-01-01T00:00:00Z'
+    colorCustomizable: false
   },
   {
     id: 'object-eiffel',
@@ -472,8 +462,7 @@ const MOCK_CHARACTERS: Character[] = [
     svgContent: null,
     color: '#6B7280',
     colorCustomizable: true,
-    colorProperty: 'fill',
-    createdAt: '2024-01-01T00:00:00Z'
+    colorProperty: 'fill'
   },
   {
     id: 'bio-giraffe',
@@ -486,7 +475,6 @@ const MOCK_CHARACTERS: Character[] = [
     svgContent: null,
     color: '#D97706',
     colorCustomizable: true,
-    colorProperty: 'fill',
-    createdAt: '2024-01-01T00:00:00Z'
+    colorProperty: 'fill'
   }
 ];

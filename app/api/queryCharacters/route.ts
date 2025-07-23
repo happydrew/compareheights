@@ -16,8 +16,7 @@ function transformDatabaseToFrontend(dbRecord: DatabaseCharacter): Character {
     svgContent: null, // SVG内容不存储在数据库中，需要时动态获取
     color: dbRecord.color,
     colorCustomizable: dbRecord.color_customizable,
-    colorProperty: dbRecord.color_property || undefined,
-    createdAt: dbRecord.created_at
+    colorProperty: dbRecord.color_property || undefined
   };
 }
 
@@ -54,7 +53,7 @@ export async function GET(request: NextRequest) {
 
     // 添加排序和分页
     query = query
-      .order('created_at', { ascending: true })
+      .order('order_num', { ascending: true })
       .range(offset, offset + limit - 1);
 
     // 执行查询

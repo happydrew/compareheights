@@ -8,66 +8,66 @@ export interface NameLibrary {
 export const CHARACTER_NAMES: NameLibrary = {
   // 成年男性 (generic-male)
   'generic-genman': [
-    'Alex Chen', 'David Wilson', 'Michael Brown', 'James Taylor', 'Robert Davis',
-    'William Garcia', 'John Martinez', 'Thomas Anderson', 'Christopher Lee', 'Daniel White'
+    'Alex', 'David', 'Michael', 'James', 'Robert',
+    'William', 'John', 'Thomas', 'Christopher', 'Daniel'
   ],
 
   'generic-man': [
-    'Alex Chen', 'David Wilson', 'Michael Brown', 'James Taylor', 'Robert Davis',
-    'William Garcia', 'John Martinez', 'Thomas Anderson', 'Christopher Lee', 'Daniel White'
+    'Alex', 'David', 'Michael', 'James', 'Robert',
+    'William', 'John', 'Thomas', 'Christopher', 'Daniel'
   ],
 
   // 成年女性 (generic-female)
   'generic-genwoman': [
-    'Emily Johnson', 'Sarah Miller', 'Jessica Davis', 'Ashley Wilson', 'Amanda Brown',
-    'Jennifer Garcia', 'Lisa Martinez', 'Michelle Taylor', 'Stephanie Lee', 'Nicole White'
+    'Emily', 'Sarah', 'Jessica', 'Ashley', 'Amanda',
+    'Jennifer', 'Lisa', 'Michelle', 'Stephanie', 'Nicole'
   ],
 
   'generic-woman': [
-    'Emily Johnson', 'Sarah Miller', 'Jessica Davis', 'Ashley Wilson', 'Amanda Brown',
-    'Jennifer Garcia', 'Lisa Martinez', 'Michelle Taylor', 'Stephanie Lee', 'Nicole White'
+    'Emily', 'Sarah', 'Jessica', 'Ashley', 'Amanda',
+    'Jennifer', 'Lisa', 'Michelle', 'Stephanie', 'Nicole'
   ],
 
   // 儿童 (generic-child) - 可以是男孩或女孩
   'generic-child': [
-    'Tyler Smith', 'Emma Chen', 'Brandon Wilson', 'Olivia Brown', 'Justin Taylor',
-    'Ava Davis', 'Kevin Garcia', 'Sophia Martinez', 'Ryan Anderson', 'Mia Lee'
+    'Tyler', 'Emma', 'Brandon', 'Olivia', 'Justin',
+    'Ava', 'Kevin', 'Sophia', 'Ryan', 'Mia'
   ],
 
   // 老年男性
   'generic-oldman': [
-    'George Thompson', 'Frank Miller', 'Henry Davis', 'Walter Wilson', 'Arthur Brown',
-    'Harold Garcia', 'Ralph Martinez', 'Albert Taylor', 'Eugene Anderson', 'Ernest Lee'
+    'George', 'Frank', 'Henry', 'Walter', 'Arthur',
+    'Harold', 'Ralph', 'Albert', 'Eugene', 'Ernest'
   ],
 
   // 老年女性
   'generic-oldwoman': [
-    'Dorothy Johnson', 'Betty Miller', 'Helen Davis', 'Margaret Wilson', 'Ruth Brown',
-    'Frances Garcia', 'Joan Martinez', 'Mary Taylor', 'Patricia Anderson', 'Barbara Lee'
+    'Dorothy', 'Betty', 'Helen', 'Margaret', 'Ruth',
+    'Frances', 'Joan', 'Mary', 'Patricia', 'Barbara'
   ],
 
   // 婴儿/幼儿（性别中性）
   'generic-baby': [
-    'Baby Alex', 'Baby Sam', 'Baby Jordan', 'Baby Taylor', 'Baby Casey',
-    'Baby Riley', 'Baby Avery', 'Baby Quinn', 'Baby Morgan', 'Baby Blake'
+    'Baby', 'Sweetie', 'Pumpkin', 'Angel', 'Bunny',
+    'Princess', 'Sugarplum', 'Lulu', 'Daisy', 'Buddy'
   ],
 
   // 青少年男性
   'generic-boy': [
-    'Jake Thompson', 'Noah Miller', 'Ethan Davis', 'Lucas Wilson', 'Mason Brown',
-    'Logan Garcia', 'Jackson Martinez', 'Aiden Taylor', 'Carter Anderson', 'Owen Lee'
+    'Jake', 'Noah', 'Ethan', 'Lucas', 'Mason',
+    'Logan', 'Jackson', 'Aiden', 'Carter', 'Owen'
   ],
 
   // 青少年女性
   'generic-girl': [
-    'Chloe Johnson', 'Madison Miller', 'Abigail Davis', 'Grace Wilson', 'Lily Brown',
-    'Zoe Garcia', 'Natalie Martinez', 'Hannah Taylor', 'Samantha Anderson', 'Ella Lee'
+    'Chloe', 'Madison', 'Abigail', 'Grace', 'Lily',
+    'Zoe', 'Natalie', 'Hannah', 'Samantha', 'Ella'
   ],
 
   // 通用人物（不分性别年龄）
   'generic-person': [
-    'Jordan Smith', 'Taylor Johnson', 'Casey Brown', 'Riley Wilson', 'Morgan Davis',
-    'Avery Garcia', 'Quinn Martinez', 'Blake Anderson', 'Cameron Lee', 'Drew White'
+    'Jordan', 'Taylor', 'Casey', 'Riley', 'Morgan',
+    'Avery', 'Quinn', 'Blake', 'Cameron', 'Drew'
   ]
 };
 

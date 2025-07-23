@@ -15,8 +15,8 @@ CREATE TABLE public.characters (
   color_customizable BOOLEAN NOT NULL DEFAULT false, -- 是否支持自定义颜色
   color_property TEXT,                   -- SVG中需要修改颜色的属性名（如fill,stroke）
 
-  -- 时间戳
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()   -- 创建时间
+  -- 排序字段
+  order_num INTEGER NOT NULL DEFAULT 0   -- 显示排序，数字越小越靠前
 );
 
 -- 为订单表启用RLS
@@ -43,12 +43,13 @@ COMMENT ON COLUMN public.characters.thumbnail_url IS '缩略图URL，用于角�
 COMMENT ON COLUMN public.characters.color IS '默认颜色，HEX格式(如#3B82F6)，SVG角色可自定义';
 COMMENT ON COLUMN public.characters.color_customizable IS '是否支持自定义颜色，主要用于SVG角色';
 COMMENT ON COLUMN public.characters.color_property IS 'SVG中需要修改颜色的属性名，多个属性用逗号分隔(如fill,stroke)';
-COMMENT ON COLUMN public.characters.created_at IS '记录创建时间';
+COMMENT ON COLUMN public.characters.order_num IS '显示排序，数字越小越靠前，用于控制角色在列表中的显示顺序';
 
 -- 创建索引
 CREATE INDEX idx_characters_type ON public.characters(type);
 CREATE INDEX idx_characters_name ON public.characters(name);
 CREATE INDEX idx_characters_height ON public.characters(height);
+CREATE INDEX idx_characters_order ON public.characters(order_num);
 
 -- 为LIKE查询优化的索引 (支持前缀匹配)
 CREATE INDEX idx_characters_name_pattern ON public.characters(name text_pattern_ops);

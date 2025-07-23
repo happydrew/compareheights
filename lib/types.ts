@@ -12,8 +12,7 @@ export interface DatabaseCharacter {
   color: string | null;
   color_customizable: boolean;
   color_property: string | null;
-  created_at: string;
-  updated_at: string;
+  order: number;
 }
 
 // API查询参数
