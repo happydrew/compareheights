@@ -29,7 +29,12 @@ export const CHARACTER_NAMES: NameLibrary = {
   ],
 
   // 儿童 (generic-child) - 可以是男孩或女孩
-  'generic-child': [
+  'generic-child-kid-5years-boy': [
+    'Tyler', 'Emma', 'Brandon', 'Olivia', 'Justin',
+    'Ava', 'Kevin', 'Sophia', 'Ryan', 'Mia'
+  ],
+
+  'generic-child-kid-5years-girl': [
     'Tyler', 'Emma', 'Brandon', 'Olivia', 'Justin',
     'Ava', 'Kevin', 'Sophia', 'Ryan', 'Mia'
   ],
@@ -53,13 +58,25 @@ export const CHARACTER_NAMES: NameLibrary = {
   ],
 
   // 青少年男性
-  'generic-boy': [
+  'generic-child-kid-12years-boy': [
     'Jake', 'Noah', 'Ethan', 'Lucas', 'Mason',
     'Logan', 'Jackson', 'Aiden', 'Carter', 'Owen'
   ],
 
   // 青少年女性
-  'generic-girl': [
+  'generic-child-kid-12years-girl': [
+    'Chloe', 'Madison', 'Abigail', 'Grace', 'Lily',
+    'Zoe', 'Natalie', 'Hannah', 'Samantha', 'Ella'
+  ],
+
+  // 青少年男性(16)
+  'generic-teenager-16years-boy': [
+    'Jake', 'Noah', 'Ethan', 'Lucas', 'Mason',
+    'Logan', 'Jackson', 'Aiden', 'Carter', 'Owen'
+  ],
+
+  // 青少年女性(16)
+  'generic-teenager-16years-girl': [
     'Chloe', 'Madison', 'Abigail', 'Grace', 'Lily',
     'Zoe', 'Natalie', 'Hannah', 'Samantha', 'Ella'
   ],
